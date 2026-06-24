@@ -1,0 +1,21 @@
+{
+  "name": "@empir/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^25.9.2",
+    "happy-dom": "^20.10.2",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}

@@ -1,0 +1,11 @@
+node_modules/
+.output/
+.wxt/
+dist/
+*.log
+.idea/
+web-ext.config.ts
+.e2e-scratch/
+docs/
+design/
+.claude/

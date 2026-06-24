@@ -1,0 +1,123 @@
+@import url("https://fonts.googleapis.com/css2?family=Roboto+Flex:opsz,wght@8..144,400;8..144,500;8..144,600;8..144,700&display=swap");
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ── shadcn semantic tokens (re-wired to EMPIR palette) ────────────────────── */
+@theme inline {
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+/* ── EMPIR design tokens (cf. mockup EMPIR Extension (standalone).html) ────── */
+@theme {
+  /* Surfaces (dark theme) */
+  --color-empir-bg: #0b0f17;
+  --color-empir-panel: #1c1f26;
+  --color-empir-panel-2: #1f2430;
+  --color-empir-card: rgba(28, 34, 50, 0.5);
+  --color-empir-card-solid: #161b29;
+  --color-empir-card-strong: #232a3f;
+  --color-empir-line: rgba(255, 255, 255, 0.05);
+  --color-empir-line-strong: rgba(255, 255, 255, 0.12);
+
+  /* Texte */
+  --color-empir-text: #e7ecf3;
+  --color-empir-text-default: #c4cad6;
+  --color-empir-muted: #aeb6c5;
+  --color-empir-muted-2: #8a93a6;
+  --color-empir-disabled: #5f6571;
+  --color-empir-disabled-2: #3c4250;
+
+  /* Brand purple */
+  --color-empir-primary: #7c6cff;
+  --color-empir-primary-dark: #5b4be0;
+  --color-empir-accent: #b7acff;
+
+  /* Sémantique */
+  --color-empir-success: #22c55e;
+  --color-empir-success-soft: #4ade80;
+  --color-empir-warn: #f5c451;
+  --color-empir-warn-soft: #f59e0b;
+  --color-empir-danger: #ef6b6b;
+  --color-empir-danger-soft: #ff5d73;
+
+  /* Échelle DPE (A→G) */
+  --color-empir-dpe-a: #15803d;
+  --color-empir-dpe-b: #4d9f3c;
+  --color-empir-dpe-c: #a3b820;
+  --color-empir-dpe-d: #e8b71c;
+  --color-empir-dpe-e: #e88f1c;
+  --color-empir-dpe-f: #e25822;
+  --color-empir-dpe-g: #c81e1e;
+
+  /* Radius EMPIR */
+  --radius-empir-pill: 999px;
+  --radius-empir-card: 11px;
+  --radius-empir-card-lg: 14px;
+  --radius-empir-btn: 10px;
+  --radius-empir-icon: 8px;
+
+  /* Police */
+  --font-empir: "Roboto Flex", system-ui, sans-serif;
+  --font-sans: "Roboto Flex", system-ui, sans-serif;
+
+  /* Shadows */
+  --shadow-empir-glow: 0 0 24px rgba(124, 108, 255, 0.35);
+  --shadow-empir-card: 0 1px 2px rgba(0, 0, 0, 0.25), 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+
+/* Shadcn dark-mode defaults wired to EMPIR colors so primitives (Button, Card…)
+   render coherently on the dark surface without per-component overrides. */
+:root,
+:host {
+  --radius: 0.65rem;
+  --background: #0b0f17;
+  --foreground: #e7ecf3;
+  --card: #161b29;
+  --card-foreground: #e7ecf3;
+  --popover: #1c1f26;
+  --popover-foreground: #e7ecf3;
+  --primary: #7c6cff;
+  --primary-foreground: #ffffff;
+  --secondary: rgba(255, 255, 255, 0.06);
+  --secondary-foreground: #e7ecf3;
+  --muted: rgba(255, 255, 255, 0.04);
+  --muted-foreground: #aeb6c5;
+  --accent: rgba(124, 108, 255, 0.18);
+  --accent-foreground: #b7acff;
+  --destructive: #ef6b6b;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.08);
+  --ring: rgba(124, 108, 255, 0.5);
+}
+
+@layer base {
+  :root,
+  :host {
+    font-family: var(--font-empir);
+    color: var(--color-empir-text);
+    background: var(--color-empir-bg);
+  }
+}
