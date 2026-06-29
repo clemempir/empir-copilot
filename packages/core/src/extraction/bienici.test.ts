@@ -51,6 +51,11 @@ describe("parseBienici (fixture réelle Bordeaux 57473578)", () => {
     expect(r.ges).toBe("B");
   });
 
+  it("extrait la date du DPE en toutes lettres (« Date de réalisation du DPE : 5 décembre 2024 »)", () => {
+    const r = parseBienici(loadDoc(), REAL_URL);
+    expect(r.dpeDate).toBe("2024-12-05");
+  });
+
   it("déduit propertyType depuis l'URL", () => {
     const r = parseBienici(loadDoc(), REAL_URL);
     expect(r.propertyType).toBe("Appartement");

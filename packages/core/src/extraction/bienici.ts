@@ -112,7 +112,10 @@ export function parseBienici(doc: Document, url: string): Listing {
   const gesText = `${readEnergyText(doc, "ges") ?? ""} ${title}`;
   const dpeKwhM2 = extractKwhM2(dpeText);
   const gesKgCO2M2 = extractGesKgM2(gesText);
-  const dpeDate = extractDpeDate(`${dpeText} ${title}`);
+  // Bien'ici affiche « Date de réalisation du DPE : 5 décembre 2024 » dans un
+  // bloc à part (hors .dpe-line) → on scanne tout le texte de la page.
+  const dpeDate =
+    extractDpeDate(doc.body?.textContent ?? "") ?? extractDpeDate(`${dpeText} ${title}`);
 
   return {
     url,

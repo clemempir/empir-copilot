@@ -26,3 +26,5 @@ export { SavedListingCard } from "./saved-listing-card";
 export type { SavedListingCardProps } from "./saved-listing-card";
 export { StepProgress } from "./step-progress";
 export type { StepProgressProps, StepStatus } from "./step-progress";
+export { SectionHeader } from "./section-header";
+export type { SectionHeaderProps } from "./section-header";

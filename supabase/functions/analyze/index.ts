@@ -22,7 +22,7 @@ interface Listing {
   rooms?: number;
   bedrooms?: number;
   landSurface?: number;
-  propertyType?: "Appartement" | "Maison";
+  propertyType?: "Appartement" | "Maison" | "Immeuble";
   location: {
     postalCode?: string;
     city?: string;
@@ -34,6 +34,8 @@ interface Listing {
   dpeKwhM2?: number;
   gesKgCO2M2?: number;
   dpeDate?: string;
+  apartmentCount?: number;
+  geo?: { lat: number; lon: number; radiusM?: number; precision?: "gps" | "disk" };
   attributes?: { label: string; value: string }[];
 }
 
@@ -57,6 +59,25 @@ Deno.serve(async (req: Request) => {
   const baseUrl = Deno.env.get("SUPABASE_URL")!;
   const anon = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 
+  // Entrée du résolveur, dérivée de l'annonce — échoée dans `debug` pour le
+  // diagnostic côté sidepanel.
+  const resolverInput = {
+    postalCode: body.listing.location.postalCode,
+    city: body.listing.location.city,
+    surface: body.listing.surface,
+    rooms: body.listing.rooms,
+    landSurface: body.listing.landSurface,
+    propertyType: body.listing.propertyType,
+    dpeClass: parseDpe(body.listing.dpe),
+    dpeKwhM2: body.listing.dpeKwhM2,
+    gesKgCO2M2: body.listing.gesKgCO2M2,
+    gesClass: parseDpe(body.listing.ges),
+    dpeDate: body.listing.dpeDate,
+    apartmentCount: body.listing.apartmentCount,
+    geo: body.listing.geo,
+    yearBuilt: extractYearBuilt(body.listing.attributes),
+  };
+
   // 1. resolve-address (inclut le quota)
   const resolveRes = await fetch(`${baseUrl}/functions/v1/resolve-address`, {
     method: "POST",
@@ -69,25 +90,13 @@ Deno.serve(async (req: Request) => {
     body: JSON.stringify({
       deviceHash: body.deviceHash,
       listingUrl: body.listing.url,
-      input: {
-        postalCode: body.listing.location.postalCode,
-        city: body.listing.location.city,
-        surface: body.listing.surface,
-        rooms: body.listing.rooms,
-        landSurface: body.listing.landSurface,
-        propertyType: body.listing.propertyType,
-        dpeClass: parseDpe(body.listing.dpe),
-        dpeKwhM2: body.listing.dpeKwhM2,
-        gesKgCO2M2: body.listing.gesKgCO2M2,
-        gesClass: parseDpe(body.listing.ges),
-        dpeDate: body.listing.dpeDate,
-        yearBuilt: extractYearBuilt(body.listing.attributes),
-      },
+      input: resolverInput,
     }),
   });
   const resolveData = (await resolveRes.json()) as {
     candidates: { lat: number; lon: number; address: string; confidence: number }[];
     usage: { used: number; limit: number; allowed: boolean; plan: string };
+    debug?: Record<string, unknown>;
   };
 
   if (!resolveData.usage.allowed) {
@@ -111,6 +120,7 @@ Deno.serve(async (req: Request) => {
     candidates: resolveData.candidates,
     enrichments: { risks, plu, taxeFonciere: taxe },
     usage: resolveData.usage,
+    debug: { resolverInput, ...(resolveData.debug ?? {}) },
   });
 });
 

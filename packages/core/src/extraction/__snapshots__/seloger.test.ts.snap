@@ -72,6 +72,11 @@ La présente annonce immobilière a été rédigée sous la responsabilité édi
   "dpe": undefined,
   "dpeDate": undefined,
   "dpeKwhM2": undefined,
+  "geo": {
+    "lat": -20.87991426229509,
+    "lon": 55.450340983606544,
+    "radiusM": 595,
+  },
   "ges": undefined,
   "gesKgCO2M2": undefined,
   "location": {

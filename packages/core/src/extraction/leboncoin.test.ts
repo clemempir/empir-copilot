@@ -215,4 +215,45 @@ describe("parseLeboncoin", () => {
     expect(listing.location.district).toBeUndefined();
     expect(listing.location.rawAddress).toBe("Lyon 69001");
   });
+
+  it("détecte un immeuble via le value_label de real_estate_type", () => {
+    const ad = forgedAd({
+      subject: "Immeuble de rapport - 5 lots",
+      attributes: [
+        { key: "square", value: "284" },
+        { key: "real_estate_type", value: "5", value_label: "Immeuble" },
+      ],
+    });
+    const listing = parseLeboncoin(
+      forgeDoc(ad),
+      "https://www.leboncoin.fr/ad/ventes_immobilieres/forge",
+    );
+    expect(listing.propertyType).toBe("Immeuble");
+  });
+
+  it("déduit le type du titre quand real_estate_type est inconnu et sans label", () => {
+    const ad = forgedAd({
+      subject: "Immeuble entièrement loué centre-ville",
+      attributes: [
+        { key: "square", value: "300" },
+        { key: "real_estate_type", value: "9" },
+      ],
+    });
+    const listing = parseLeboncoin(
+      forgeDoc(ad),
+      "https://www.leboncoin.fr/ad/ventes_immobilieres/forge",
+    );
+    expect(listing.propertyType).toBe("Immeuble");
+  });
+
+  it("construit listing.geo selon le type de localisation", () => {
+    const mk = (type: string) =>
+      parseLeboncoin(
+        forgeDoc(forgedAd({ location: { city: "Lyon", zipcode: "69001", lat: 45.76, lng: 4.83, type } })),
+        "https://www.leboncoin.fr/ad/ventes_immobilieres/forge",
+      ).geo;
+    expect(mk("address")).toEqual({ lat: 45.76, lon: 4.83, precision: "gps" });
+    expect(mk("street")).toEqual({ lat: 45.76, lon: 4.83, radiusM: 150, precision: "disk" });
+    expect(mk("city")).toEqual({ lat: 45.76, lon: 4.83, radiusM: 2500, precision: "disk" });
+  });
 });

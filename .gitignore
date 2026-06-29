@@ -10,3 +10,6 @@ docs/
 design/
 .claude/
 .gstack/
+
+# Deno lockfile (edge functions, regenerated on deploy)
+deno.lock

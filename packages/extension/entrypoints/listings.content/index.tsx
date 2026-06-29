@@ -6,6 +6,7 @@ import {
   parseLeboncoin,
   parseLeboncoinHtml,
   parseSeloger,
+  parseSelogerHtml,
   type Listing,
   type Site,
 } from "@empir/core";
@@ -16,6 +17,10 @@ const PARSERS: Partial<Record<Site, (doc: Document, url: string) => Listing>> = 
   seloger: parseSeloger,
   bienici: parseBienici,
   citya: parseCitya,
+};
+
+const HTML_PARSERS: Partial<Record<Site, (html: string, url: string) => Listing>> = {
+  seloger: parseSelogerHtml,
 };
 
 function waitForContent(timeoutMs = 20_000): Promise<boolean> {
@@ -55,6 +60,14 @@ async function extractAndPush(url: string) {
     if (parser) {
       try {
         listing = parser(document, url);
+      } catch {
+        listing = null;
+      }
+    }
+    if (!listing && site && HTML_PARSERS[site]) {
+      try {
+        const resp = await fetch(url, { credentials: "include" });
+        listing = HTML_PARSERS[site](await resp.text(), url);
       } catch {
         listing = null;
       }

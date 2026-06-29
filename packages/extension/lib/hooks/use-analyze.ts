@@ -2,6 +2,20 @@ import { useCallback, useState } from "react";
 import type { Listing, ResolvedAddress } from "@empir/core";
 import { getDeviceHash, invokeEdge } from "@/lib/supabase";
 
+/** Bloc de diagnostic renvoyé par la fonction `analyze` (mode debug). */
+export interface AnalyzeDebug {
+  /** Entrée exacte passée au résolveur (valeurs extraites de l'annonce). */
+  resolverInput?: Record<string, unknown>;
+  /** Nombre de certificats ADEME retournés (−1 si servi depuis le cache). */
+  ademeTotal?: number;
+  /** Certificats conservés après le filtre dur surface ±15% (−1 si cache). */
+  keptAfterSurfaceFilter?: number;
+  /** La passe 2 cadastre (terrain, maisons) a-t-elle été déclenchée. */
+  usedLandSurfacePass?: boolean;
+  /** Résultat servi depuis le cache `address_cache` (algo non rejoué). */
+  fromCache?: boolean;
+}
+
 export interface AnalysisResult {
   status: "ok" | "quota_exceeded";
   resolvedAddress?: ResolvedAddress;
@@ -12,6 +26,7 @@ export interface AnalysisResult {
     taxeFonciere?: unknown;
   };
   usage: { used: number; limit: number; allowed: boolean; plan: string };
+  debug?: AnalyzeDebug;
 }
 
 export interface UseAnalyze {

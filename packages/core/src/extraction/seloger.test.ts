@@ -3,6 +3,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { isSelogerListingPage, parseSeloger, parseSelogerHtml } from "./seloger";
+import { extractSelogerGeo, toPropertyType } from "./mapping";
 
 const html = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "fixtures/seloger-annonce.html"),
@@ -34,6 +35,14 @@ describe("isSelogerListingPage", () => {
     expect(
       isSelogerListingPage(
         "https://www.seloger.com/annonces/achat-de-prestige/maison/lyon-69/987654321.htm",
+      ),
+    ).toBe(true);
+  });
+
+  it("reconnaît le format /{id}/detail.htm (vue détail SERP)", () => {
+    expect(
+      isSelogerListingPage(
+        "https://www.seloger.com/256068147/detail.htm?serp_view=list&search=distributionTypes%3DBuy#ln=classified_search_results",
       ),
     ).toBe(true);
   });
@@ -116,5 +125,41 @@ describe("parseSeloger", () => {
     const listing = parseSelogerHtml(html, REAL_URL);
     const { extractedAt, ...stable } = listing;
     expect(stable).toMatchSnapshot();
+  });
+});
+
+describe("géo SeLoger (overlay Mapbox)", () => {
+  const saintSever = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "__fixtures__/seloger-saint-sever-268828085.html"),
+    "utf8",
+  );
+
+  it("extrait le centre + rayon du polygone Mapbox", () => {
+    const geo = extractSelogerGeo(saintSever);
+    expect(geo).toBeDefined();
+    expect(geo!.lat).toBeCloseTo(43.76, 1);
+    expect(geo!.lon).toBeCloseTo(-0.56, 1);
+    // Contour de commune (localisation_city) → grand rayon → disque imprécis,
+    // que le résolveur traite comme « pas de marqueur décisif ».
+    expect(geo!.radiusM!).toBeGreaterThan(1000);
+  });
+
+  it("renvoie undefined sans overlay géo", () => {
+    expect(extractSelogerGeo("<html>pas de carte</html>")).toBeUndefined();
+  });
+
+  it("lit les lettres DPE/GES depuis le DOM quand l'état ne les porte pas", () => {
+    const listing = parseSelogerHtml(saintSever, "https://www.seloger.com/256068147/detail.htm");
+    expect(listing.dpe).toBe("D");
+    expect(listing.ges).toBe("B");
+  });
+});
+
+describe("toPropertyType — immeuble", () => {
+  it("reconnaît immeuble (titre ou label)", () => {
+    expect(toPropertyType("Immeuble à vendre")).toBe("Immeuble");
+    expect(toPropertyType("immeuble de rapport")).toBe("Immeuble");
+    expect(toPropertyType("Appartement 3 pièces")).toBe("Appartement");
+    expect(toPropertyType("Maison à vendre")).toBe("Maison");
   });
 });

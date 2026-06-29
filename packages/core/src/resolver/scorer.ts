@@ -2,214 +2,286 @@ import type { AdemeCertificate } from "./ademe";
 import type { MatchBreakdownItem, ResolverInput } from "./types";
 
 /**
- * Pondérations (somme ≈ 100 sur le chemin "tout numérique") de chaque critère
- * pour calculer la confiance qu'un certificat ADEME corresponde au bien décrit
- * dans l'annonce. La surface reste le critère le plus discriminant ; le DPE et le
- * GES numériques priment sur leurs lettres (fortement bruitées par les arrondis
- * et l'algo 3CL), mais retombent sur la lettre quand le chiffre manque.
+ * SCORING ADAPTATIF — « selectivity-weighted ».
  *
- * ⚠️ Réplique manuelle dans `supabase/functions/resolve-address/index.ts` —
- * propager tout changement (cf. commentaire de ce fichier).
+ * Le score d'un certificat n'est plus une somme de poids fixes mais :
+ *
+ *     score(c) = Σ_k  w_k · sim_k(c) · selectivity_k
+ *
+ *   • w_k          = fiabilité intrinsèque du critère (constante ci-dessous).
+ *   • sim_k(c)     ∈ [0,1] = concordance continue : 1 dans la tolérance serrée,
+ *                  décroît linéairement jusqu'à 0 au bord de la tolérance max.
+ *   • selectivity_k = pouvoir discriminant LOCAL : rareté de la valeur de
+ *                  l'annonce parmi le vivier P (les certs de la commune) :
+ *                      selectivity_k = -ln( (1 + #{c'∈P : sim_k(c')=1}) / (1+|P|) )
+ *                  ≈ 0 si tout le monde partage la valeur (inutile pour trancher),
+ *                  grand si la valeur est rare (très discriminante).
+ *
+ * Conséquences voulues :
+ *   – un critère manquant ou non concordant contribue 0 (jamais de pénalité) ;
+ *   – une valeur rare et concordante (date de DPE, conso précise) domine
+ *     naturellement, sans pondération ad hoc ;
+ *   – le score est additif → robuste aux DPE immeuble / lots (la surface qui
+ *     diverge contribue juste 0 au lieu d'éliminer le candidat).
+ *
+ * ⚠️ Réplique manuelle dans `supabase/functions/resolve-address/index.ts`.
  */
-const WEIGHTS = {
-  surface: 28,
-  dpeKwhM2: 22,
-  dpeClass: 8, // fallback DPE lettre (exclusif avec dpeKwhM2)
-  gesKgCO2M2: 12,
-  gesClass: 7, // fallback GES lettre (exclusif avec gesKgCO2M2)
-  yearBuilt: 11,
-  landSurface: 7, // maisons uniquement (contenance cadastrale)
-  dpeDate: 5,
-  buildingType: 5,
-  rooms: 0, // ADEME v2 n'expose pas le nb de pièces — désactivé
+
+/** Fiabilité intrinsèque w_k (constantes). */
+const W = {
+  dpeKwhM2: 0.9,
+  surface: 0.85,
+  dpeDate: 0.85,
+  gesKgCO2M2: 0.6,
+  yearBuilt: 0.5,
+  landSurface: 0.5,
+  apartmentCount: 0.5,
+  dpeClass: 0.35,
+  gesClass: 0.3,
+  buildingType: 0.25,
 } as const;
 
-/** Surfaces habitables : ±5% considéré comme matchant (arrondis de saisie). */
-const SURFACE_TOLERANCE_PCT = 5;
-/** DPE numérique : ±10% (variation 3CL fréquente). */
-const DPE_TOLERANCE_PCT = 10;
-/** GES numérique : ±15% (plus volatile). */
-const GES_TOLERANCE_PCT = 15;
-/** Surface du terrain : ±10% (contenance cadastrale vs surface annoncée). */
-const LAND_SURFACE_TOLERANCE_PCT = 10;
-/** Année de construction : ±3 ans (typo, période). */
-const YEAR_TOLERANCE = 3;
-/** Date du DPE : ±60 jours (tie-break). */
-const DPE_DATE_TOLERANCE_DAYS = 60;
+/** Seuil de similarité considéré comme « concordant » (tolérance serrée). */
+const SIM_MATCH = 0.999;
+/** Seuil de sélectivité « forte » (critère vraiment discriminant localement). */
+export const SELECTIVITY_STRONG = 1.0;
+const MS_PER_DAY = 86_400_000;
 
-function within(value: number, target: number, tolerancePct: number): boolean {
-  const tol = (Math.abs(target) * tolerancePct) / 100;
-  return Math.abs(value - target) <= tol;
+// ── Fonctions de similarité ────────────────────────────────────────────────
+
+/** Similarité pour une valeur numérique avec tolérances en pourcentage. */
+function simPct(value: number, target: number, tightPct: number, maxPct: number): number {
+  const diff = Math.abs(value - target);
+  const tight = (Math.abs(target) * tightPct) / 100;
+  const max = (Math.abs(target) * maxPct) / 100;
+  if (diff <= tight) return 1;
+  if (diff >= max) return 0;
+  return (max - diff) / (max - tight);
 }
 
-export interface ScoredCertificate {
-  cert: AdemeCertificate;
-  /** 0-100. */
-  confidence: number;
-  breakdown: MatchBreakdownItem[];
+/** Similarité pour un écart absolu (années, jours) avec tolérances absolues. */
+function simAbs(diff: number, tight: number, max: number): number {
+  if (diff <= tight) return 1;
+  if (diff >= max) return 0;
+  return (max - diff) / (max - tight);
 }
 
-export function scoreCertificate(
-  input: ResolverInput,
-  cert: AdemeCertificate,
-): ScoredCertificate {
-  const breakdown: MatchBreakdownItem[] = [];
-  let scored = 0;
-  let totalWeight = 0;
+function parseDay(s: string | undefined): number | null {
+  if (!s) return null;
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? t : null;
+}
 
-  // Surface habitable
+/** Similarité « date DPE » : min des écarts à date_etablissement ET date_visite. */
+function simDate(input: ResolverInput, cert: AdemeCertificate): number | null {
+  const target = parseDay(input.dpeDate);
+  if (target == null) return null;
+  const cands = [parseDay(cert.dpeDate), parseDay(cert.dpeVisitDate)].filter(
+    (v): v is number => v != null,
+  );
+  if (!cands.length) return null;
+  const bestDays = Math.min(...cands.map((t) => Math.abs(target - t))) / MS_PER_DAY;
+  return simAbs(bestDays, 3, 10);
+}
+
+function buildingTypeSim(input: ResolverInput, cert: AdemeCertificate): number | null {
+  if (!input.propertyType || !cert.buildingType) return null;
+  const want = input.propertyType.toLowerCase();
+  if (want === "maison") return cert.buildingType === "maison" ? 1 : 0;
+  // appartement ≈ immeuble (un appart appartient à un immeuble)
+  return cert.buildingType === "appartement" || cert.buildingType === "immeuble" ? 1 : 0;
+}
+
+// ── Définition des critères actifs (résout l'exclusivité DPE/GES) ──────────
+
+interface CritDef {
+  key: string;
+  weight: number;
+  expected: string | number;
+  /** Similarité du certificat, ou `null` si le critère n'est pas évaluable pour lui. */
+  sim(cert: AdemeCertificate): number | null;
+  /** Valeur du certificat (pour le breakdown). */
+  actual(cert: AdemeCertificate): string | number | undefined;
+}
+
+function activeCriteria(input: ResolverInput): CritDef[] {
+  const crits: CritDef[] = [];
+
   if (input.surface != null) {
-    totalWeight += WEIGHTS.surface;
-    const matched = within(cert.surface, input.surface, SURFACE_TOLERANCE_PCT);
-    if (matched) scored += WEIGHTS.surface;
-    breakdown.push({
-      criterion: "surface",
-      weight: WEIGHTS.surface,
-      matched,
-      expected: input.surface,
-      actual: cert.surface,
+    const target = input.surface;
+    crits.push({
+      key: "surface",
+      weight: W.surface,
+      expected: target,
+      sim: (c) => simPct(c.surface, target, 5, 15),
+      actual: (c) => c.surface,
     });
   }
 
   // DPE — numérique préféré, fallback lettre (exclusif).
-  if (input.dpeKwhM2 != null && cert.dpeKwhM2 != null) {
-    totalWeight += WEIGHTS.dpeKwhM2;
-    const matched = within(cert.dpeKwhM2, input.dpeKwhM2, DPE_TOLERANCE_PCT);
-    if (matched) scored += WEIGHTS.dpeKwhM2;
-    breakdown.push({
-      criterion: "dpeKwhM2",
-      weight: WEIGHTS.dpeKwhM2,
-      matched,
-      expected: input.dpeKwhM2,
-      actual: cert.dpeKwhM2,
+  if (input.dpeKwhM2 != null) {
+    const target = input.dpeKwhM2;
+    crits.push({
+      key: "dpeKwhM2",
+      weight: W.dpeKwhM2,
+      expected: target,
+      sim: (c) => (c.dpeKwhM2 == null ? null : simPct(c.dpeKwhM2, target, 5, 15)),
+      actual: (c) => c.dpeKwhM2,
     });
-  } else if (input.dpeClass && cert.dpeClass) {
-    totalWeight += WEIGHTS.dpeClass;
-    const matched = input.dpeClass === cert.dpeClass;
-    if (matched) scored += WEIGHTS.dpeClass;
-    breakdown.push({
-      criterion: "dpeClass",
-      weight: WEIGHTS.dpeClass,
-      matched,
-      expected: input.dpeClass,
-      actual: cert.dpeClass,
+  } else if (input.dpeClass) {
+    const target = input.dpeClass;
+    crits.push({
+      key: "dpeClass",
+      weight: W.dpeClass,
+      expected: target,
+      sim: (c) => (c.dpeClass == null ? null : c.dpeClass === target ? 1 : 0),
+      actual: (c) => c.dpeClass,
     });
   }
 
-  // GES — numérique préféré, fallback lettre (exclusif, même mécanique que le DPE).
-  if (input.gesKgCO2M2 != null && cert.gesKgCO2M2 != null) {
-    totalWeight += WEIGHTS.gesKgCO2M2;
-    const matched = within(cert.gesKgCO2M2, input.gesKgCO2M2, GES_TOLERANCE_PCT);
-    if (matched) scored += WEIGHTS.gesKgCO2M2;
-    breakdown.push({
-      criterion: "gesKgCO2M2",
-      weight: WEIGHTS.gesKgCO2M2,
-      matched,
-      expected: input.gesKgCO2M2,
-      actual: cert.gesKgCO2M2,
+  // GES — numérique préféré, fallback lettre (exclusif).
+  if (input.gesKgCO2M2 != null) {
+    const target = input.gesKgCO2M2;
+    crits.push({
+      key: "gesKgCO2M2",
+      weight: W.gesKgCO2M2,
+      expected: target,
+      sim: (c) => (c.gesKgCO2M2 == null ? null : simPct(c.gesKgCO2M2, target, 15, 30)),
+      actual: (c) => c.gesKgCO2M2,
     });
-  } else if (input.gesClass && cert.gesClass) {
-    totalWeight += WEIGHTS.gesClass;
-    const matched = input.gesClass === cert.gesClass;
-    if (matched) scored += WEIGHTS.gesClass;
-    breakdown.push({
-      criterion: "gesClass",
-      weight: WEIGHTS.gesClass,
-      matched,
-      expected: input.gesClass,
-      actual: cert.gesClass,
+  } else if (input.gesClass) {
+    const target = input.gesClass;
+    crits.push({
+      key: "gesClass",
+      weight: W.gesClass,
+      expected: target,
+      sim: (c) => (c.gesClass == null ? null : c.gesClass === target ? 1 : 0),
+      actual: (c) => c.gesClass,
     });
   }
 
-  // Année de construction
-  if (input.yearBuilt != null && cert.yearBuilt != null) {
-    totalWeight += WEIGHTS.yearBuilt;
-    const matched = Math.abs(input.yearBuilt - cert.yearBuilt) <= YEAR_TOLERANCE;
-    if (matched) scored += WEIGHTS.yearBuilt;
-    breakdown.push({
-      criterion: "yearBuilt",
-      weight: WEIGHTS.yearBuilt,
-      matched,
-      expected: input.yearBuilt,
-      actual: cert.yearBuilt,
+  if (input.yearBuilt != null) {
+    const target = input.yearBuilt;
+    crits.push({
+      key: "yearBuilt",
+      weight: W.yearBuilt,
+      expected: target,
+      sim: (c) => (c.yearBuilt == null ? null : simAbs(Math.abs(c.yearBuilt - target), 2, 5)),
+      actual: (c) => c.yearBuilt,
     });
   }
 
-  // Surface du terrain — discriminant pour les maisons uniquement, et seulement
-  // si la contenance cadastrale a été résolue (cf. passe 2 du résolveur).
-  if (
-    input.landSurface != null &&
-    cert.landSurface != null &&
-    input.propertyType === "Maison"
-  ) {
-    totalWeight += WEIGHTS.landSurface;
-    const matched = within(cert.landSurface, input.landSurface, LAND_SURFACE_TOLERANCE_PCT);
-    if (matched) scored += WEIGHTS.landSurface;
-    breakdown.push({
-      criterion: "landSurface",
-      weight: WEIGHTS.landSurface,
-      matched,
-      expected: input.landSurface,
-      actual: cert.landSurface,
+  if (input.landSurface != null && input.propertyType === "Maison") {
+    const target = input.landSurface;
+    crits.push({
+      key: "landSurface",
+      weight: W.landSurface,
+      expected: target,
+      sim: (c) => (c.landSurface == null ? null : simPct(c.landSurface, target, 10, 25)),
+      actual: (c) => c.landSurface,
     });
   }
 
-  // Date du DPE — tie-break léger (ne compte que si les deux dates sont parsables).
-  if (input.dpeDate && cert.dpeDate) {
-    const ta = Date.parse(input.dpeDate);
-    const tb = Date.parse(cert.dpeDate);
-    if (Number.isFinite(ta) && Number.isFinite(tb)) {
-      totalWeight += WEIGHTS.dpeDate;
-      const matched = Math.abs(ta - tb) <= DPE_DATE_TOLERANCE_DAYS * 86_400_000;
-      if (matched) scored += WEIGHTS.dpeDate;
-      breakdown.push({
-        criterion: "dpeDate",
-        weight: WEIGHTS.dpeDate,
-        matched,
-        expected: input.dpeDate,
-        actual: cert.dpeDate,
-      });
-    }
+  if (input.apartmentCount != null) {
+    const target = input.apartmentCount;
+    crits.push({
+      key: "apartmentCount",
+      weight: W.apartmentCount,
+      expected: target,
+      sim: (c) => (c.apartmentCount == null ? null : c.apartmentCount === target ? 1 : 0),
+      actual: (c) => c.apartmentCount,
+    });
   }
 
-  // Type de bâtiment
-  if (input.propertyType && cert.buildingType) {
-    totalWeight += WEIGHTS.buildingType;
-    const expectedType = input.propertyType.toLowerCase();
-    const matched =
-      cert.buildingType === expectedType ||
-      (expectedType === "appartement" && cert.buildingType === "immeuble");
-    if (matched) scored += WEIGHTS.buildingType;
-    breakdown.push({
-      criterion: "buildingType",
-      weight: WEIGHTS.buildingType,
-      matched,
+  if (input.dpeDate) {
+    crits.push({
+      key: "dpeDate",
+      weight: W.dpeDate,
+      expected: input.dpeDate,
+      sim: (c) => simDate(input, c),
+      actual: (c) => c.dpeDate ?? c.dpeVisitDate,
+    });
+  }
+
+  if (input.propertyType) {
+    crits.push({
+      key: "buildingType",
+      weight: W.buildingType,
       expected: input.propertyType,
-      actual: cert.buildingType,
+      sim: (c) => buildingTypeSim(input, c),
+      actual: (c) => c.buildingType,
     });
   }
 
-  const confidence = totalWeight === 0 ? 0 : Math.round((scored / totalWeight) * 100);
-  return { cert, confidence, breakdown };
+  return crits;
+}
+
+// ── Sélectivité locale + scoring ───────────────────────────────────────────
+
+/**
+ * Précalcule la sélectivité de chaque critère sur le vivier `pool` :
+ * rareté de la valeur de l'annonce (combien de certs la partagent aussi).
+ */
+export function computeSelectivities(
+  input: ResolverInput,
+  pool: AdemeCertificate[],
+): Map<string, number> {
+  const sels = new Map<string, number>();
+  const n = pool.length;
+  for (const crit of activeCriteria(input)) {
+    let match = 0;
+    for (const c of pool) {
+      const s = crit.sim(c);
+      if (s != null && s >= SIM_MATCH) match += 1;
+    }
+    sels.set(crit.key, -Math.log((1 + match) / (1 + n)));
+  }
+  return sels;
+}
+
+export interface ScoredCertificate {
+  cert: AdemeCertificate;
+  /** Score additif brut (≥ 0). */
+  score: number;
+  breakdown: MatchBreakdownItem[];
+  /** Nb de critères concordants à forte sélectivité (pour la confiance). */
+  strongConcordant: number;
 }
 
 /**
- * Score tous les certificats, ne garde que ceux dont la surface est dans la
- * tolérance (critère bloquant), trie par confiance décroissante, et retourne
- * le top `limit`.
+ * Score un certificat contre l'annonce, étant donné les sélectivités du vivier.
  */
-export function rankCertificates(
+export function scoreCertificate(
   input: ResolverInput,
-  certs: AdemeCertificate[],
-  limit = 5,
-): ScoredCertificate[] {
-  const ranked: ScoredCertificate[] = [];
-  for (const cert of certs) {
-    // Filtre dur sur la surface si fournie — un écart >15% indique presque
-    // toujours un bien différent.
-    if (input.surface != null && !within(cert.surface, input.surface, 15)) continue;
-    ranked.push(scoreCertificate(input, cert));
+  cert: AdemeCertificate,
+  selectivities: Map<string, number>,
+): ScoredCertificate {
+  const breakdown: MatchBreakdownItem[] = [];
+  let score = 0;
+  let strongConcordant = 0;
+
+  for (const crit of activeCriteria(input)) {
+    const sim = crit.sim(cert);
+    if (sim == null) continue; // non évaluable des deux côtés → ignoré
+    const selectivity = selectivities.get(crit.key) ?? 0;
+    const contribution = crit.weight * sim * selectivity;
+    score += contribution;
+    if (sim >= 0.5 && selectivity >= SELECTIVITY_STRONG) strongConcordant += 1;
+    breakdown.push({
+      criterion: crit.key,
+      matched: sim >= SIM_MATCH,
+      similarity: round3(sim),
+      weight: crit.weight,
+      selectivity: round3(selectivity),
+      contribution: round3(contribution),
+      expected: crit.expected,
+      actual: crit.actual(cert),
+    });
   }
-  ranked.sort((a, b) => b.confidence - a.confidence);
-  return ranked.slice(0, limit);
+
+  return { cert, score: round3(score), breakdown, strongConcordant };
+}
+
+function round3(n: number): number {
+  return Math.round(n * 1000) / 1000;
 }

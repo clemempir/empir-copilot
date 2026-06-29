@@ -21,13 +21,35 @@ describe("fetchAdemeCertificates", () => {
     expect(calledUrl).toContain("code_postal_ban_eq=75003");
   });
 
-  it("ajoute un filtre type_batiment_eq quand propertyType fourni", async () => {
+  it("ne filtre PLUS par type_batiment (les DPE immeuble doivent passer)", async () => {
     const fetchFn = vi.fn(async () =>
       new Response(JSON.stringify({ results: [] })),
     ) as unknown as typeof fetch;
     await fetchAdemeCertificates({ postalCode: "75003", buildingType: "Appartement", fetchFn });
     const url = (fetchFn as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
-    expect(url).toContain("type_batiment_eq=appartement");
+    expect(url).not.toContain("type_batiment_eq");
+    // La surface immeuble est demandée pour ne pas jeter les lignes immeuble.
+    expect(url).toContain("surface_habitable_immeuble");
+  });
+
+  it("retombe sur surface_habitable_immeuble quand la surface logement est nulle", async () => {
+    const fetchFn = mockFetch({
+      results: [
+        {
+          numero_dpe: "IMM-1",
+          adresse_ban: "12 Rue de Pontix 40500 Saint-Sever",
+          code_postal_ban: "40500",
+          _geopoint: "43.75832,-0.57554",
+          surface_habitable_immeuble: 284,
+          type_batiment: "immeuble",
+          etiquette_dpe: "E",
+        },
+      ],
+    });
+    const certs = await fetchAdemeCertificates({ postalCode: "40500", fetchFn });
+    expect(certs).toHaveLength(1);
+    expect(certs[0]!.surface).toBe(284);
+    expect(certs[0]!.buildingType).toBe("immeuble");
   });
 
   it("normalise les certificats (numero_dpe, surface, _geopoint, etc.)", async () => {

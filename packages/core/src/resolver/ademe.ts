@@ -35,8 +35,18 @@ export interface AdemeCertificate {
   gesClass?: "A" | "B" | "C" | "D" | "E" | "F" | "G";
   /** Année de construction (peut être nulle). */
   yearBuilt?: number;
-  /** Date du DPE (`date_etablissement_dpe`). */
+  /** Date d'établissement du DPE (`date_etablissement_dpe`). */
   dpeDate?: string;
+  /** Date de visite du diagnostiqueur (`date_visite_diagnostiqueur`) — fallback. */
+  dpeVisitDate?: string;
+  /** Nombre de logements (`nombre_appartement`) — pertinent pour les immeubles. */
+  apartmentCount?: number;
+  /** Identifiant BAN de l'adresse (`identifiant_ban`) — clé de regroupement. */
+  addressId?: string;
+  /** Statut de géocodage BAN (`statut_geocodage`) — qualité du `_geopoint`. */
+  geocodeStatus?: string;
+  /** Score BAN (`score_ban`) ∈ [0,1] — fiabilité du point. */
+  banScore?: number;
   /**
    * Surface du terrain en m². L'ADEME ne l'expose pas : ce champ est renseigné
    * a posteriori à partir de la contenance de la parcelle cadastrale (cf.
@@ -48,8 +58,8 @@ export interface AdemeCertificate {
 export interface FetchAdemeOptions {
   /** Code postal obligatoire — la base est trop volumineuse pour interroger autrement. */
   postalCode: string;
-  /** Filtre optionnel sur le type de bâtiment (`maison` | `appartement`). */
-  buildingType?: "Appartement" | "Maison";
+  /** Filtre optionnel sur le type de bâtiment (`maison` | `appartement` | `immeuble`). */
+  buildingType?: "Appartement" | "Maison" | "Immeuble";
   /** Nombre maximum de candidats retournés (défaut 1000). */
   limit?: number;
   /** Injection pour test. */
@@ -67,6 +77,9 @@ interface AdemeRow {
   /** Coordonnées BAN au format `"lat,lon"`. */
   _geopoint?: string;
   surface_habitable_logement?: number;
+  /** Surface portée par les DPE de type `immeuble` (le champ logement y est nul). */
+  surface_habitable_immeuble?: number;
+  nombre_appartement?: number;
   type_batiment?: string;
   etiquette_dpe?: string;
   conso_5_usages_par_m2_ep?: number;
@@ -74,6 +87,10 @@ interface AdemeRow {
   etiquette_ges?: string;
   annee_construction?: number;
   date_etablissement_dpe?: string;
+  date_visite_diagnostiqueur?: string;
+  identifiant_ban?: string;
+  statut_geocodage?: string;
+  score_ban?: number;
 }
 
 function parseGeopoint(value: string | undefined): { lat?: number; lon?: number } {
@@ -94,7 +111,9 @@ function asLetter(v: unknown): AdemeCertificate["dpeClass"] {
 
 function normalize(row: AdemeRow): AdemeCertificate | null {
   const certId = row.numero_dpe;
-  const surface = row.surface_habitable_logement;
+  // Les DPE `immeuble` portent leur surface dans `surface_habitable_immeuble` :
+  // on retombe dessus pour ne pas jeter ces lignes (cf. biens en copropriété).
+  const surface = row.surface_habitable_logement ?? row.surface_habitable_immeuble;
   const postalCode = row.code_postal_ban;
   if (!certId || surface == null || !postalCode) return null;
   const { lat, lon } = parseGeopoint(row._geopoint);
@@ -113,6 +132,11 @@ function normalize(row: AdemeRow): AdemeCertificate | null {
     gesClass: asLetter(row.etiquette_ges),
     yearBuilt: row.annee_construction || undefined,
     dpeDate: row.date_etablissement_dpe,
+    dpeVisitDate: row.date_visite_diagnostiqueur,
+    apartmentCount: row.nombre_appartement || undefined,
+    addressId: row.identifiant_ban,
+    geocodeStatus: row.statut_geocodage,
+    banScore: row.score_ban,
   };
 }
 
@@ -132,9 +156,9 @@ export async function fetchAdemeCertificates(
   const url = new URL(ADEME_BASE);
   url.searchParams.set("size", String(limit));
   url.searchParams.set("code_postal_ban_eq", opts.postalCode);
-  if (opts.buildingType) {
-    url.searchParams.set("type_batiment_eq", opts.buildingType.toLowerCase());
-  }
+  // NB : on ne filtre plus par `type_batiment`. Un appartement en copropriété
+  // peut n'avoir qu'un DPE de type `immeuble` (ou un lot), que ce filtre
+  // excluait avant même le scoring. Le type est départagé par le scorer.
   url.searchParams.set(
     "select",
     [
@@ -144,6 +168,8 @@ export async function fetchAdemeCertificates(
       "nom_commune_ban",
       "_geopoint",
       "surface_habitable_logement",
+      "surface_habitable_immeuble",
+      "nombre_appartement",
       "type_batiment",
       "etiquette_dpe",
       "conso_5_usages_par_m2_ep",
@@ -151,6 +177,10 @@ export async function fetchAdemeCertificates(
       "etiquette_ges",
       "annee_construction",
       "date_etablissement_dpe",
+      "date_visite_diagnostiqueur",
+      "identifiant_ban",
+      "statut_geocodage",
+      "score_ban",
     ].join(","),
   );
 

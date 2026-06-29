@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { browser } from "wxt/browser";
 import type { Listing, QuickAnalysis } from "@empir/core";
 import type { TabState } from "@/lib/messages";
@@ -10,6 +10,7 @@ import { useProfile } from "@/lib/hooks/use-profile";
 import { IdleView } from "./views/IdleView";
 import { AnalyzingView } from "./views/AnalyzingView";
 import { ResultView } from "./views/ResultView";
+import { DiagnosticPanel } from "./views/DiagnosticPanel";
 import { SignupView } from "./views/SignupView";
 import { AccountView } from "./views/AccountView";
 import { UpgradeModal } from "./views/UpgradeModal";
@@ -30,33 +31,81 @@ export default function App() {
   const [tabState, setTabState] = useState<TabState>({ status: "idle" });
   const [showUpgrade, setShowUpgrade] = useState(false);
 
-  // Subscribe to background tab state updates (LISTING_DETECTED)
+  // S'attache à l'onglet actif et reste synchronisé avec le background.
+  // Le sidepanel n'a pas de `sender.tab.id` côté background : on doit envoyer
+  // explicitement le tabId pour récupérer l'état au démarrage.
+  const activeTabIdRef = useRef<number | null>(null);
   useEffect(() => {
-    void browser.runtime
-      .sendMessage({ type: "GET_TAB_STATE" })
-      .then((r) => {
-        const res = r as { state?: TabState };
-        if (res?.state) setTabState(res.state);
-      })
-      .catch(() => {});
-    const listener = (msg: { type?: string; state?: TabState }) => {
-      if (msg?.type === "TAB_STATE_CHANGED" && msg.state) setTabState(msg.state);
+    let alive = true;
+
+    async function bindActiveTab() {
+      const tabs = await browser.tabs.query({ active: true, currentWindow: true }).catch(() => []);
+      const tabId = tabs[0]?.id ?? null;
+      if (!alive || tabId == null) return;
+      activeTabIdRef.current = tabId;
+      const r = await browser.runtime
+        .sendMessage({ type: "GET_TAB_STATE", tabId })
+        .catch(() => null);
+      const res = r as { state?: TabState } | null;
+      if (alive && res?.state) setTabState(res.state);
+    }
+
+    void bindActiveTab();
+
+    const onMsg = (msg: { type?: string; tabId?: number; state?: TabState }) => {
+      if (msg?.type !== "TAB_STATE_CHANGED" || !msg.state) return;
+      if (msg.tabId == null || msg.tabId === activeTabIdRef.current) {
+        setTabState(msg.state);
+      } else {
+        // Le broadcast concerne un autre onglet que celui auquel on se croit lié :
+        // l'onglet actif a peut-être changé (nouvel onglet). On se re-synchronise
+        // au lieu de perdre l'événement de détection.
+        void bindActiveTab();
+      }
     };
-    browser.runtime.onMessage.addListener(listener);
-    return () => browser.runtime.onMessage.removeListener(listener);
+    browser.runtime.onMessage.addListener(onMsg);
+
+    const onActivated = () => void bindActiveTab();
+    browser.tabs.onActivated.addListener(onActivated);
+
+    // Re-bind quand l'onglet actif finit de charger ou change d'URL (nouvel
+    // onglet d'annonce, navigation), pour ne pas rester collé à l'ancien état.
+    const onUpdated = (
+      tabId: number,
+      change: { status?: string; url?: string },
+    ) => {
+      if (tabId === activeTabIdRef.current && (change.status === "complete" || change.url)) {
+        void bindActiveTab();
+      }
+    };
+    browser.tabs.onUpdated.addListener(onUpdated);
+
+    return () => {
+      alive = false;
+      browser.runtime.onMessage.removeListener(onMsg);
+      browser.tabs.onActivated.removeListener(onActivated);
+      browser.tabs.onUpdated.removeListener(onUpdated);
+    };
   }, []);
 
-  // Auto-run analysis when a new listing is detected
+  // Auto-run analysis on each new listing URL (déclenche aussi en SPA), une
+  // seule fois par URL — y compris en cas d'échec, pour éviter une boucle de
+  // retry.
+  const lastRunUrlRef = useRef<string | null>(null);
   useEffect(() => {
+    const url = tabState.listing?.url ?? null;
     if (
-      tabState.status === "detected" &&
-      tabState.listing &&
-      !analyze.loading &&
-      !analyze.result
+      tabState.status !== "detected" ||
+      !tabState.listing ||
+      !url ||
+      lastRunUrlRef.current === url
     ) {
-      void analyze.run(tabState.listing);
+      return;
     }
-  }, [tabState, analyze]);
+    lastRunUrlRef.current = url;
+    analyze.reset();
+    void analyze.run(tabState.listing);
+  }, [tabState.status, tabState.listing, analyze]);
 
   // Open upgrade modal when quota is hit
   useEffect(() => {
@@ -191,9 +240,20 @@ export default function App() {
             });
           }}
           onAccountClick={() => setScreen("account")}
+          hasUnread={notifs.items.some((n) => !n.read)}
           risks={analyze.result?.enrichments?.risks ? mapRisks(analyze.result.enrichments.risks) : []}
           urbanisme={analyze.result?.enrichments?.plu ? mapUrbanisme(analyze.result.enrichments.plu) : []}
           salesHistory={[]} // V1 : alimenté ultérieurement par enrichments.dvf
+        />
+      )}
+
+      {/* Tiroir de diagnostic — uniquement en dev (pnpm dev). */}
+      {import.meta.env.DEV && mainStatus === "result" && tabState.listing && (
+        <DiagnosticPanel
+          listing={tabState.listing}
+          resolvedAddress={analyze.result?.resolvedAddress}
+          candidates={analyze.result?.candidates}
+          debug={analyze.result?.debug}
         />
       )}
 

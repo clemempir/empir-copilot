@@ -4,201 +4,269 @@ import { resolveAddress } from "./index";
 const ADEME_HOST = "data.ademe.fr";
 const APICARTO_HOST = "apicarto.ign.fr";
 
-function makeFetch(
-  ademeResults: Record<string, unknown>[],
-  parcel?: Record<string, unknown>,
-): typeof fetch {
+interface RowOpts {
+  id: string;
+  address: string;
+  geo?: string; // "lat,lon"
+  surface?: number;
+  surfaceImm?: number;
+  apts?: number;
+  type?: string;
+  dpe?: string;
+  kwh?: number;
+  gesClass?: string;
+  ges?: number;
+  year?: number;
+  date?: string;
+  visit?: string;
+  banId?: string;
+  cp?: string;
+}
+
+function row(o: RowOpts): Record<string, unknown> {
+  return {
+    numero_dpe: o.id,
+    adresse_ban: o.address,
+    code_postal_ban: o.cp ?? "40500",
+    nom_commune_ban: "Saint-Sever",
+    _geopoint: o.geo,
+    surface_habitable_logement: o.surface,
+    surface_habitable_immeuble: o.surfaceImm,
+    nombre_appartement: o.apts,
+    type_batiment: o.type ?? "maison",
+    etiquette_dpe: o.dpe,
+    conso_5_usages_par_m2_ep: o.kwh,
+    emission_ges_5_usages_par_m2: o.ges,
+    etiquette_ges: o.gesClass,
+    annee_construction: o.year,
+    date_etablissement_dpe: o.date,
+    date_visite_diagnostiqueur: o.visit,
+    identifiant_ban: o.banId ?? o.address,
+  };
+}
+
+function makeFetch(rows: Record<string, unknown>[]): typeof fetch {
   return vi.fn(async (input: string | URL | Request) => {
     const url = typeof input === "string" ? input : input.toString();
-    if (url.includes(ADEME_HOST)) {
-      return new Response(JSON.stringify({ results: ademeResults }));
-    }
-    if (url.includes(APICARTO_HOST)) {
-      return new Response(
-        JSON.stringify({ features: parcel ? [{ properties: parcel }] : [] }),
-      );
-    }
+    if (url.includes(ADEME_HOST)) return new Response(JSON.stringify({ results: rows }));
+    if (url.includes(APICARTO_HOST)) return new Response(JSON.stringify({ features: [] }));
     return new Response("", { status: 404 });
   }) as unknown as typeof fetch;
 }
 
-describe("resolveAddress", () => {
-  it("retourne [] quand le code postal est absent", async () => {
-    const res = await resolveAddress({ postalCode: "" });
-    expect(res).toEqual([]);
-  });
+/** Bruit : N certs « ordinaires » à des dates/surfaces variées. */
+function noise(n: number): Record<string, unknown>[] {
+  return Array.from({ length: n }, (_, i) =>
+    row({
+      id: `N${i}`,
+      address: `${i} Rue Ordinaire`,
+      geo: `43.74${i},-0.58${i}`,
+      surface: 70 + i * 3,
+      type: "maison",
+      dpe: "D",
+      kwh: 200 + i,
+      date: `2019-0${(i % 9) + 1}-15`,
+    }),
+  );
+}
 
-  it("interroge ADEME, score et ajoute la parcelle cadastrale au top-1", async () => {
-    const fetchFn = makeFetch(
-      [
-        {
-          numero_dpe: "A",
-          adresse_ban: "18 Rue Béranger 75003 Paris",
-          code_postal_ban: "75003",
-          nom_commune_ban: "Paris",
-          _geopoint: "48.8674,2.3635",
-          surface_habitable_logement: 88,
-          type_batiment: "appartement",
-          etiquette_dpe: "C",
-          conso_5_usages_par_m2_ep: 165,
-          emission_ges_5_usages_par_m2: 28,
-          etiquette_ges: "C",
-        },
-        {
-          numero_dpe: "B",
-          adresse_ban: "20 Rue Autre 75003 Paris",
-          code_postal_ban: "75003",
-          surface_habitable_logement: 88,
-          type_batiment: "appartement",
-          etiquette_dpe: "F",
-          conso_5_usages_par_m2_ep: 380,
-        },
-      ],
-      {
-        id: "75103000AB0042",
-        code_insee: "75103",
-        section: "AB",
-        numero: "0042",
-      },
-    );
-
+describe("resolveAddress — marqueur géo précis", () => {
+  it("le marqueur SeLoger (~4 m) décide l'adresse (Castallet), confiance haute", async () => {
+    const rows = [
+      row({
+        id: "2340E3064983P",
+        address: "32 Rue du Castallet 40500 Saint-Sever",
+        geo: "43.75320,-0.57065", // ~4 m du marqueur
+        surface: 50,
+        type: "maison",
+        dpe: "G",
+        gesClass: "C",
+      }),
+      // décoy lointain (~1,5 km) qui matche AUSSI surface/DPE
+      row({
+        id: "DECOY",
+        address: "99 Rue Lointaine 40500 Saint-Sever",
+        geo: "43.74000,-0.58500",
+        surface: 50,
+        type: "maison",
+        dpe: "G",
+        gesClass: "C",
+      }),
+    ];
     const res = await resolveAddress(
       {
-        postalCode: "75003",
-        surface: 88,
-        dpeKwhM2: 165,
+        postalCode: "40500",
+        surface: 50,
+        dpeClass: "G",
+        gesClass: "C",
+        propertyType: "Maison",
+        geo: { lat: 43.75323, lon: -0.57068 },
+      },
+      { fetchFn: makeFetch(rows) },
+    );
+    expect(res[0]!.address).toContain("Castallet");
+    expect(res[0]!.resolved).toBe(true);
+    expect(res[0]!.confidence).toBeGreaterThanOrEqual(85);
+    expect(res[0]!.flags).toContain("geo-decided");
+    // Le décoy lointain est écarté par le gate spatial.
+    expect(res.some((r) => r.ademeCertId === "DECOY")).toBe(false);
+  });
+
+  it("DPE au point en contradiction → conflict + non résolu", async () => {
+    const rows = [
+      // seul cert au point : immeuble 400 m² classe B, alors que l'annonce dit maison 50 m² G
+      row({
+        id: "CONFLICT",
+        address: "1 Place du Conflit 40500 Saint-Sever",
+        geo: "43.75320,-0.57065",
+        surfaceImm: 400,
+        type: "immeuble",
+        dpe: "B",
+      }),
+    ];
+    const res = await resolveAddress(
+      {
+        postalCode: "40500",
+        surface: 50,
+        dpeClass: "G",
+        propertyType: "Maison",
+        geo: { lat: 43.75323, lon: -0.57068 },
+      },
+      { fetchFn: makeFetch(rows) },
+    );
+    expect(res[0]!.resolved).toBe(false);
+    expect(res[0]!.flags).toContain("conflict");
+    expect(res[0]!.confidence).toBeLessThan(50);
+  });
+});
+
+describe("resolveAddress — désambiguïsation par attributs (sans géo)", () => {
+  it("immeuble Pontix : la date + la surface immeuble rares le font gagner", async () => {
+    const rows = [
+      row({
+        id: "PONTIX",
+        address: "12 Rue de Pontix 40500 Saint-Sever",
+        geo: "43.758,-0.575",
+        surfaceImm: 284,
+        apts: 5,
+        type: "immeuble",
+        dpe: "E",
+        date: "2023-10-25",
+      }),
+      ...noise(10),
+    ];
+    const res = await resolveAddress(
+      {
+        postalCode: "40500",
+        surface: 284,
+        apartmentCount: 5,
+        dpeClass: "E",
+        dpeDate: "2023-10-25",
+      },
+      { fetchFn: makeFetch(rows) },
+    );
+    expect(res[0]!.address).toContain("Pontix");
+    expect(res[0]!.resolved).toBe(true);
+  });
+
+  it("Leboncoin immeuble Ursulines : la date de diagnostic unique tranche", async () => {
+    const rows = [
+      row({
+        id: "URSULINES",
+        address: "24 Rue des Ursulines 40500 Saint-Sever",
+        geo: "43.757,-0.576",
+        surfaceImm: 150,
+        type: "immeuble",
+        dpe: "D",
+        date: "2023-12-19",
+      }),
+      ...noise(12),
+    ];
+    const res = await resolveAddress(
+      { postalCode: "40500", surface: 150, dpeClass: "D", dpeDate: "2023-12-19" },
+      { fetchFn: makeFetch(rows) },
+    );
+    expect(res[0]!.address).toContain("Ursulines");
+    expect(res[0]!.resolved).toBe(true);
+  });
+
+  it("Papin : le fallback date_visite évite un faux positif (date_etablissement décalée)", async () => {
+    const rows = [
+      row({
+        id: "PAPIN",
+        address: "10 Rue de Papin 40500 Saint-Sever",
+        geo: "43.756,-0.577",
+        surface: 46,
+        type: "appartement",
+        dpe: "C",
+        kwh: 127,
+        date: "2026-05-14", // établissement décalé de 2 j
+        visit: "2026-05-12", // visite = date affichée → fallback
+      }),
+      // décoy : bonne date d'établissement mais tout le reste faux
+      row({
+        id: "DECOY",
+        address: "77 Rue Piège 40500 Saint-Sever",
+        geo: "43.74,-0.59",
+        surface: 120,
+        type: "appartement",
+        dpe: "F",
+        kwh: 350,
+        date: "2026-05-12",
+      }),
+      ...noise(8),
+    ];
+    const res = await resolveAddress(
+      {
+        postalCode: "40500",
+        surface: 46,
+        dpeClass: "C",
+        dpeKwhM2: 127,
+        dpeDate: "2026-05-12",
         propertyType: "Appartement",
       },
-      { fetchFn },
+      { fetchFn: makeFetch(rows) },
     );
-    expect(res).toHaveLength(2);
-    expect(res[0]!.ademeCertId).toBe("A");
-    expect(res[0]!.confidence).toBeGreaterThan(res[1]!.confidence);
-    expect(res[0]!.parcelId).toBe("75103000AB0042");
-    // Le second candidat n'a pas de lookup cadastre (best-effort top-1 only).
-    expect(res[1]!.parcelId).toBeUndefined();
+    expect(res[0]!.address).toContain("Papin");
+    expect(res[0]!.resolved).toBe(true);
+    const dateRow = res[0]!.matchBreakdown.find((b) => b.criterion === "dpeDate");
+    expect(dateRow?.similarity).toBe(1);
   });
+});
 
-  it("survit à un échec du cadastre (best-effort)", async () => {
-    const fetchFn = vi.fn(async (input: string | URL | Request) => {
-      const url = typeof input === "string" ? input : input.toString();
-      if (url.includes(ADEME_HOST)) {
-        return new Response(
-          JSON.stringify({
-            results: [
-              {
-                numero_dpe: "A",
-                code_postal_ban: "75003",
-                adresse_ban: "X",
-                surface_habitable_logement: 88,
-                _geopoint: "48,2",
-              },
-            ],
-          }),
-        );
-      }
-      return new Response("err", { status: 503 });
-    }) as unknown as typeof fetch;
-
-    const res = await resolveAddress(
-      { postalCode: "75003", surface: 88 },
-      { fetchFn },
-    );
-    expect(res).toHaveLength(1);
-    expect(res[0]!.parcelId).toBeUndefined();
-    expect(res[0]!.confidence).toBeGreaterThan(0);
-  });
-
-  it("re-score les maisons avec la contenance cadastrale (passe 2 terrain)", async () => {
-    // Deux maisons de surface habitable identique ; seul le terrain les départage.
-    const ademe = [
-      {
-        numero_dpe: "A",
-        adresse_ban: "1 rue A 33000 Bordeaux",
-        code_postal_ban: "33000",
-        _geopoint: "44.84,-0.58",
-        surface_habitable_logement: 100,
-        type_batiment: "maison",
-      },
-      {
-        numero_dpe: "B",
-        adresse_ban: "2 rue B 33000 Bordeaux",
-        code_postal_ban: "33000",
-        _geopoint: "44.85,-0.59",
-        surface_habitable_logement: 100,
-        type_batiment: "maison",
-      },
+describe("resolveAddress — anti-faux-positif (resolved:false)", () => {
+  it("maison 228 m² SANS DPE → ne résout pas (aucun signal discriminant)", async () => {
+    const rows = [
+      row({ id: "A", address: "1 Rue A", surface: 228, type: "maison" }),
+      row({ id: "B", address: "2 Rue B", surface: 230, type: "maison" }),
+      row({ id: "C", address: "3 Rue C", surface: 226, type: "maison" }),
+      ...noise(5),
     ];
-    // Le cadastre renvoie une contenance dépendant du point : A→300 m², B→800 m².
-    const fetchFn = vi.fn(async (input: string | URL | Request) => {
-      const url = typeof input === "string" ? input : input.toString();
-      if (url.includes(ADEME_HOST)) {
-        return new Response(JSON.stringify({ results: ademe }));
-      }
-      if (url.includes(APICARTO_HOST)) {
-        const contenance = url.includes("-0.59") ? 800 : 300;
-        return new Response(
-          JSON.stringify({
-            features: [
-              {
-                properties: {
-                  id: `P-${contenance}`,
-                  code_insee: "33063",
-                  section: "AB",
-                  numero: "1",
-                  contenance,
-                },
-              },
-            ],
-          }),
-        );
-      }
-      return new Response("", { status: 404 });
-    }) as unknown as typeof fetch;
-
     const res = await resolveAddress(
-      { postalCode: "33000", surface: 100, landSurface: 820, propertyType: "Maison" },
-      { fetchFn },
+      { postalCode: "40500", surface: 228, propertyType: "Maison" },
+      { fetchFn: makeFetch(rows) },
     );
-
-    // B (terrain 800 ≈ 820) doit passer devant A (terrain 300) grâce à la passe 2.
-    expect(res[0]!.ademeCertId).toBe("B");
-    expect(res[0]!.confidence).toBeGreaterThan(res[1]!.confidence);
-    expect(res[0]!.parcelId).toBe("P-800");
+    expect(res[0]!.resolved).toBe(false);
+    expect(res.length).toBeGreaterThan(1); // candidates exposés
   });
 
-  it("ne déclenche pas la passe 2 cadastre sans surface de terrain", async () => {
-    let cadastreCalls = 0;
-    const fetchFn = vi.fn(async (input: string | URL | Request) => {
-      const url = typeof input === "string" ? input : input.toString();
-      if (url.includes(ADEME_HOST)) {
-        return new Response(
-          JSON.stringify({
-            results: [
-              {
-                numero_dpe: "A",
-                adresse_ban: "1 rue A",
-                code_postal_ban: "33000",
-                _geopoint: "44.84,-0.58",
-                surface_habitable_logement: 100,
-                type_batiment: "maison",
-              },
-            ],
-          }),
-        );
-      }
-      if (url.includes(APICARTO_HOST)) {
-        cadastreCalls += 1;
-        return new Response(JSON.stringify({ features: [] }));
-      }
-      return new Response("", { status: 404 });
-    }) as unknown as typeof fetch;
-
-    // Maison mais sans landSurface → seul le lookup top-1 (best-effort) est permis.
-    await resolveAddress(
-      { postalCode: "33000", surface: 100, propertyType: "Maison" },
-      { fetchFn },
+  it("marge faible : 2 adresses au score quasi égal → non résolu + candidates[]", async () => {
+    const rows = [
+      row({ id: "A", address: "1 Rue Jumelle", surface: 50, dpe: "G", date: "2024-01-01" }),
+      row({ id: "B", address: "2 Rue Jumelle", surface: 50, dpe: "G", date: "2024-01-01" }),
+      ...noise(6),
+    ];
+    const res = await resolveAddress(
+      { postalCode: "40500", surface: 50, dpeClass: "G", dpeDate: "2024-01-01" },
+      { fetchFn: makeFetch(rows) },
     );
-    expect(cadastreCalls).toBe(1); // uniquement le top-1, pas la passe 2
+    expect(res[0]!.resolved).toBe(false);
+    expect(res[0]!.flags).toContain("low-margin");
+    expect(res.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("retourne [] sans code postal", async () => {
+    const res = await resolveAddress({ postalCode: "" });
+    expect(res).toEqual([]);
   });
 });

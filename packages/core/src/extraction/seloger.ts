@@ -1,9 +1,10 @@
-import type { Listing } from "../types";
+import type { Listing, ListingGeo } from "../types";
 import {
   buildRawAddress,
   extractDpeDate,
   extractGesKgM2,
   extractKwhM2,
+  extractSelogerGeo,
   toLetter,
   toNumber,
   toPropertyType,
@@ -13,7 +14,10 @@ import {
 const UNKNOWN = "seloger: structure inconnue";
 
 export function isSelogerListingPage(url: string): boolean {
-  return /seloger\.com\/annonces\/[^?#]*\/\d+\.htm/.test(url);
+  // Deux formats d'annonce SeLoger :
+  //   /annonces/{transaction}/{type}/{ville-cp}/{id}.htm   (canonique)
+  //   /{id}/detail.htm?serp_view=list…                     (vue détail depuis la SERP)
+  return /seloger\.com\/(annonces\/[^?#]*\/\d+\.htm|\d+\/detail\.htm)/.test(url);
 }
 
 // ── Types for the __UFRN_LIFECYCLE_SERVERREQUEST__ state ──────────────────
@@ -148,6 +152,18 @@ function extractDpe(
   return undefined;
 }
 
+/**
+ * Fallback DOM : sur les pages où l'état `__UFRN` ne porte pas le DPE, SeLoger
+ * affiche les lettres dans deux barèmes `cdp-preview-scale-highlighted`
+ * (1er = DPE, 2e = GES). On lit le texte de la pastille surlignée.
+ */
+function extractDpeGesFromDom(raw: string): { dpe?: string; ges?: string } {
+  const letters = [...raw.matchAll(/cdp-preview-scale-highlighted[^>]*>\s*([A-G])\s*</g)].map(
+    (m) => m[1],
+  );
+  return { dpe: letters[0], ges: letters[1] };
+}
+
 /** Valeur numérique d'un barème énergie (le `value` SeLoger porte souvent le chiffre). */
 function extractScaleNumber(
   scales: Array<{ name?: string; rating?: string; value?: string }> | undefined,
@@ -160,7 +176,7 @@ function extractScaleNumber(
   return undefined;
 }
 
-function buildListing(state: SelogerState, url: string): Listing {
+function buildListing(state: SelogerState, url: string, rawSource: string): Listing {
   const classified = state.app_cldp?.data?.classified;
   if (!classified) throw new Error(UNKNOWN);
   if (!state) throw new Error(UNKNOWN);
@@ -187,12 +203,16 @@ function buildListing(state: SelogerState, url: string): Listing {
   const city = toStr(locAddr?.city);
   const postalCode = toStr(locAddr?.zipCode) ?? toStr(ltProduct?.estate_postalcode);
 
+  // Localisation : overlay carte Mapbox (point précis ou polygone de floutage).
+  const geo: ListingGeo | undefined = extractSelogerGeo(rawSource);
+
   // Title
   const title = toStr(sections?.hardFacts?.title) ?? "";
 
-  // Property type
+  // Property type — état `__UFRN` en priorité ; sinon dérivé du titre
+  // (« Maison à vendre », « Appartement 3 pièces… ») absent sur certaines pages.
   const propTypeStr = toStr(rawData?.propertyTypeLabel) ?? toStr(rawData?.propertyType);
-  const propertyType = toPropertyType(propTypeStr);
+  const propertyType = toPropertyType(propTypeStr) ?? toPropertyType(title);
 
   // Description
   const description = toStr(sections?.description?.description) ?? "";
@@ -206,8 +226,11 @@ function buildListing(state: SelogerState, url: string): Listing {
   const certificates = sections?.energy?.certificates ?? [];
   const dpeScales = certificates[0]?.scales;
   const gesScales = certificates[1]?.scales;
-  const dpe = extractDpe(dpeScales);
-  const ges = extractDpe(gesScales);
+  // Lettres DPE/GES : état `__UFRN` en priorité, sinon fallback DOM (pastilles
+  // surlignées du bloc énergie, présentes même quand l'état ne porte rien).
+  const domLetters = extractDpeGesFromDom(rawSource);
+  const dpe = extractDpe(dpeScales) ?? domLetters.dpe;
+  const ges = extractDpe(gesScales) ?? domLetters.ges;
   // Valeurs numériques DPE/GES : barème énergie en priorité, sinon regex sur la
   // description.
   const dpeKwhM2 = extractScaleNumber(dpeScales) ?? extractKwhM2(description);
@@ -237,6 +260,7 @@ function buildListing(state: SelogerState, url: string): Listing {
     dpeKwhM2,
     gesKgCO2M2,
     dpeDate,
+    geo,
     description,
     photos,
     publishedAt: toStr(classified.metadata?.creationDate),
@@ -249,12 +273,14 @@ function buildListing(state: SelogerState, url: string): Listing {
 export function parseSeloger(doc: Document, url: string): Listing {
   const state = readState(doc);
   if (!state) throw new Error(UNKNOWN);
-  return buildListing(state, url);
+  // outerHTML inclut scripts + img Mapbox → suffisant pour le géo.
+  const raw = doc.documentElement?.outerHTML ?? "";
+  return buildListing(state, url, raw);
 }
 
 /** Parse from a raw HTML string (fixture tests, server-side). */
 export function parseSelogerHtml(html: string, url: string): Listing {
   const state = readStateFromHtml(html);
   if (!state) throw new Error(UNKNOWN);
-  return buildListing(state, url);
+  return buildListing(state, url, html);
 }

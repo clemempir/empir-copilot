@@ -1,204 +1,71 @@
 import { describe, expect, it } from "vitest";
 import type { AdemeCertificate } from "./ademe";
-import { rankCertificates, scoreCertificate } from "./scorer";
+import { computeSelectivities, scoreCertificate } from "./scorer";
 
-const baseCert: AdemeCertificate = {
-  certId: "X-1",
-  address: "18 Rue Béranger 75003 Paris",
-  postalCode: "75003",
-  city: "Paris",
-  surface: 88,
-  dpeClass: "C",
-  dpeKwhM2: 165,
-  gesKgCO2M2: 28,
-  gesClass: "C",
-  yearBuilt: 1976,
-  buildingType: "appartement",
-};
+function cert(p: Partial<AdemeCertificate>): AdemeCertificate {
+  return {
+    certId: "x",
+    address: "adresse",
+    postalCode: "40500",
+    city: "Saint-Sever",
+    surface: 50,
+    ...p,
+  };
+}
 
-describe("scoreCertificate", () => {
-  it("retourne 100 % quand tous les critères matchent", () => {
-    const { confidence, breakdown } = scoreCertificate(
-      {
-        postalCode: "75003",
-        surface: 88,
-        dpeKwhM2: 165,
-        gesKgCO2M2: 28,
-        yearBuilt: 1976,
-        propertyType: "Appartement",
-      },
-      baseCert,
-    );
-    expect(confidence).toBe(100);
-    expect(breakdown.every((b) => b.matched)).toBe(true);
+describe("computeSelectivities", () => {
+  it("sélectivité ~0 pour une valeur partagée par tout le vivier", () => {
+    const pool = [cert({ surface: 50 }), cert({ surface: 50 }), cert({ surface: 50 })];
+    const sels = computeSelectivities({ postalCode: "40500", surface: 50 }, pool);
+    expect(sels.get("surface")!).toBeCloseTo(0, 5); // -ln(4/4) = 0
   });
 
-  it("tolère une variation de surface inférieure à 5 %", () => {
-    const { confidence } = scoreCertificate(
-      { postalCode: "75003", surface: 90 }, // 88 → 90 = 2.3 %
-      baseCert,
-    );
-    expect(confidence).toBe(100);
-  });
-
-  it("rejette les critères hors tolérance", () => {
-    const { confidence, breakdown } = scoreCertificate(
-      { postalCode: "75003", surface: 110, dpeKwhM2: 250, yearBuilt: 1990 },
-      baseCert,
-    );
-    expect(breakdown.find((b) => b.criterion === "surface")?.matched).toBe(false);
-    expect(breakdown.find((b) => b.criterion === "dpeKwhM2")?.matched).toBe(false);
-    expect(breakdown.find((b) => b.criterion === "yearBuilt")?.matched).toBe(false);
-    expect(confidence).toBeLessThan(50);
-  });
-
-  it("utilise la lettre DPE si la valeur numérique n'est pas fournie", () => {
-    const { breakdown, confidence } = scoreCertificate(
-      { postalCode: "75003", dpeClass: "C" },
-      baseCert,
-    );
-    expect(breakdown.find((b) => b.criterion === "dpeClass")?.matched).toBe(true);
-    expect(confidence).toBe(100);
-  });
-
-  it("préfère la valeur numérique à la lettre", () => {
-    const { breakdown } = scoreCertificate(
-      { postalCode: "75003", dpeClass: "C", dpeKwhM2: 165 },
-      baseCert,
-    );
-    expect(breakdown.some((b) => b.criterion === "dpeKwhM2")).toBe(true);
-    expect(breakdown.some((b) => b.criterion === "dpeClass")).toBe(false);
-  });
-
-  // ── GES : numérique + fallback lettre ───────────────────────────────────
-
-  it("utilise la lettre GES en fallback quand le chiffre manque", () => {
-    const { breakdown, confidence } = scoreCertificate(
-      { postalCode: "75003", gesClass: "C" },
-      baseCert,
-    );
-    expect(breakdown.find((b) => b.criterion === "gesClass")?.matched).toBe(true);
-    expect(confidence).toBe(100);
-  });
-
-  it("préfère le GES numérique à la lettre", () => {
-    const { breakdown } = scoreCertificate(
-      { postalCode: "75003", gesClass: "C", gesKgCO2M2: 28 },
-      baseCert,
-    );
-    expect(breakdown.some((b) => b.criterion === "gesKgCO2M2")).toBe(true);
-    expect(breakdown.some((b) => b.criterion === "gesClass")).toBe(false);
-  });
-
-  it("rejette une lettre GES qui ne correspond pas", () => {
-    const { breakdown } = scoreCertificate(
-      { postalCode: "75003", gesClass: "F" },
-      baseCert, // gesClass "C"
-    );
-    expect(breakdown.find((b) => b.criterion === "gesClass")?.matched).toBe(false);
-  });
-
-  // ── Surface du terrain (maisons) ────────────────────────────────────────
-
-  it("score la surface du terrain pour une maison", () => {
-    const maisonCert = { ...baseCert, buildingType: "maison", landSurface: 800 };
-    const { breakdown, confidence } = scoreCertificate(
-      { postalCode: "75003", surface: 88, landSurface: 820, propertyType: "Maison" },
-      maisonCert,
-    );
-    expect(breakdown.find((b) => b.criterion === "landSurface")?.matched).toBe(true); // 800↔820 = 2.4%
-    expect(confidence).toBe(100);
-  });
-
-  it("ignore la surface du terrain pour un appartement", () => {
-    const cert = { ...baseCert, landSurface: 800 };
-    const { breakdown } = scoreCertificate(
-      { postalCode: "75003", landSurface: 820, propertyType: "Appartement" },
-      cert,
-    );
-    expect(breakdown.some((b) => b.criterion === "landSurface")).toBe(false);
-  });
-
-  it("ignore la surface du terrain si la contenance cadastrale est absente", () => {
-    const { breakdown } = scoreCertificate(
-      { postalCode: "75003", landSurface: 820, propertyType: "Maison" },
-      { ...baseCert, buildingType: "maison" }, // pas de landSurface côté certificat
-    );
-    expect(breakdown.some((b) => b.criterion === "landSurface")).toBe(false);
-  });
-
-  it("rejette une surface du terrain hors tolérance (>10 %)", () => {
-    const maisonCert = { ...baseCert, buildingType: "maison", landSurface: 300 };
-    const { breakdown } = scoreCertificate(
-      { postalCode: "75003", landSurface: 820, propertyType: "Maison" },
-      maisonCert,
-    );
-    expect(breakdown.find((b) => b.criterion === "landSurface")?.matched).toBe(false);
-  });
-
-  // ── Date du DPE ─────────────────────────────────────────────────────────
-
-  it("score la date du DPE dans la tolérance de 60 jours", () => {
-    const cert = { ...baseCert, dpeDate: "2024-03-01" };
-    const { breakdown } = scoreCertificate(
-      { postalCode: "75003", dpeDate: "2024-03-20" },
-      cert,
-    );
-    expect(breakdown.find((b) => b.criterion === "dpeDate")?.matched).toBe(true);
-  });
-
-  it("rejette une date du DPE hors tolérance", () => {
-    const cert = { ...baseCert, dpeDate: "2024-03-01" };
-    const { breakdown } = scoreCertificate(
-      { postalCode: "75003", dpeDate: "2024-09-01" },
-      cert,
-    );
-    expect(breakdown.find((b) => b.criterion === "dpeDate")?.matched).toBe(false);
-  });
-
-  it("ignore la date du DPE si elle est illisible (hors totalWeight)", () => {
-    const cert = { ...baseCert, dpeDate: "2024-03-01" };
-    const { breakdown } = scoreCertificate(
-      { postalCode: "75003", dpeDate: "date inconnue" },
-      cert,
-    );
-    expect(breakdown.some((b) => b.criterion === "dpeDate")).toBe(false);
-  });
-
-  // ── Annonce ne portant que les lettres (DPE + GES en fallback) ──────────
-
-  it("fait feu de tout bois sur une annonce avec lettres seules", () => {
-    const { breakdown, confidence } = scoreCertificate(
-      { postalCode: "75003", surface: 88, dpeClass: "C", gesClass: "C" },
-      baseCert,
-    );
-    expect(breakdown.find((b) => b.criterion === "dpeClass")?.matched).toBe(true);
-    expect(breakdown.find((b) => b.criterion === "gesClass")?.matched).toBe(true);
-    expect(confidence).toBe(100);
+  it("forte sélectivité pour une valeur rare (date de DPE)", () => {
+    const pool = [
+      cert({ dpeDate: "2023-10-25" }),
+      ...Array.from({ length: 9 }, () => cert({ dpeDate: "2020-01-01" })),
+    ];
+    const sels = computeSelectivities({ postalCode: "40500", dpeDate: "2023-10-25" }, pool);
+    expect(sels.get("dpeDate")!).toBeGreaterThan(1.5); // -ln(2/11) ≈ 1.7
   });
 });
 
-describe("rankCertificates", () => {
-  it("filtre les surfaces très éloignées (> 15 %) et trie par confiance", () => {
-    const certs: AdemeCertificate[] = [
-      { ...baseCert, certId: "A", surface: 88, dpeKwhM2: 165 }, // match parfait
-      { ...baseCert, certId: "B", surface: 200, dpeKwhM2: 165 }, // filtré
-      { ...baseCert, certId: "C", surface: 92, dpeKwhM2: 250 }, // surface ok, DPE off
-    ];
-    const ranked = rankCertificates(
-      { postalCode: "75003", surface: 88, dpeKwhM2: 165 },
-      certs,
-    );
-    expect(ranked.map((r) => r.cert.certId)).toEqual(["A", "C"]);
-    expect(ranked[0]!.confidence).toBeGreaterThan(ranked[1]!.confidence);
+describe("scoreCertificate", () => {
+  it("contribution = w·sim·selectivity ; un critère manquant est ignoré (pas de pénalité)", () => {
+    const pool = [cert({ surface: 50, dpeKwhM2: 285 }), cert({ surface: 120, dpeKwhM2: 100 })];
+    const input = { postalCode: "40500", surface: 50, dpeKwhM2: 285 };
+    const sels = computeSelectivities(input, pool);
+    const s = scoreCertificate(input, pool[0]!, sels);
+    const surf = s.breakdown.find((b) => b.criterion === "surface")!;
+    expect(surf.similarity).toBe(1);
+    expect(surf.contribution).toBeCloseTo(0.85 * 1 * sels.get("surface")!, 3);
+    expect(s.score).toBeGreaterThan(0);
   });
 
-  it("respecte la limite passée en argument", () => {
-    const certs: AdemeCertificate[] = Array.from({ length: 10 }, (_, i) => ({
-      ...baseCert,
-      certId: `c${i}`,
-      surface: 88,
-    }));
-    expect(rankCertificates({ postalCode: "75003", surface: 88 }, certs, 3)).toHaveLength(3);
+  it("surface qui diverge → contribution 0, mais le certificat n'est pas pénalisé", () => {
+    const pool = [cert({ surface: 284, dpeKwhM2: 285 }), cert({ surface: 50, dpeKwhM2: 999 })];
+    const input = { postalCode: "40500", surface: 57, dpeKwhM2: 285 };
+    const sels = computeSelectivities(input, pool);
+    const s = scoreCertificate(input, pool[0]!, sels);
+    const surf = s.breakdown.find((b) => b.criterion === "surface")!;
+    expect(surf.similarity).toBe(0); // 284 vs 57 hors tolérance max
+    expect(s.score).toBeGreaterThan(0); // porté par le DPE numérique
+  });
+
+  it("date concordante via le fallback date_visite_diagnostiqueur", () => {
+    const c = cert({ dpeDate: "2026-05-14", dpeVisitDate: "2026-05-12" });
+    const input = { postalCode: "40500", dpeDate: "2026-05-12" };
+    const sels = computeSelectivities(input, [c, cert({ dpeDate: "2000-01-01" })]);
+    const s = scoreCertificate(input, c, sels);
+    expect(s.breakdown.find((b) => b.criterion === "dpeDate")!.similarity).toBe(1);
+  });
+
+  it("DPE numérique exclut la lettre (exclusivité)", () => {
+    const c = cert({ dpeKwhM2: 285, dpeClass: "E" });
+    const input = { postalCode: "40500", dpeKwhM2: 285, dpeClass: "E" as const };
+    const sels = computeSelectivities(input, [c]);
+    const s = scoreCertificate(input, c, sels);
+    expect(s.breakdown.some((b) => b.criterion === "dpeKwhM2")).toBe(true);
+    expect(s.breakdown.some((b) => b.criterion === "dpeClass")).toBe(false);
   });
 });

@@ -1,5 +1,28 @@
-import type { Listing, PropertyType } from "../types";
-import { extractDpeDate, extractGesKgM2, extractKwhM2, toNumber } from "./mapping";
+import type { Listing, ListingGeo, PropertyType } from "../types";
+import { extractDpeDate, extractGesKgM2, extractKwhM2, toNumber, toPropertyType } from "./mapping";
+
+/**
+ * Mappe le couple (coordonnées, type de localisation Leboncoin) vers un
+ * `ListingGeo`. Leboncoin ne donne pas de rayon : on l'approxime depuis le
+ * `location.type` (`housenumber`/`address` = point précis ; `street`/`district`/
+ * `city` = disque de plus en plus large).
+ */
+function buildGeo(lat: unknown, lon: unknown, type: string | undefined): ListingGeo | undefined {
+  if (typeof lat !== "number" || typeof lon !== "number") return undefined;
+  switch (type) {
+    case "housenumber":
+    case "address":
+      return { lat, lon, precision: "gps" };
+    case "street":
+      return { lat, lon, radiusM: 150, precision: "disk" };
+    case "district":
+      return { lat, lon, radiusM: 600, precision: "disk" };
+    case "city":
+      return { lat, lon, radiusM: 2500, precision: "disk" };
+    default:
+      return { lat, lon, radiusM: 1500, precision: "disk" };
+  }
+}
 
 export function isLeboncoinListingPage(url: string): boolean {
   return /leboncoin\.fr\/ad\/(ventes_immobilieres|immobilier)\/\d+/.test(url);
@@ -64,14 +87,17 @@ export function parseLeboncoin(doc: Document, url: string): Listing {
   const roomsRaw = attr(attributes, "rooms");
   const bedroomsRaw = attr(attributes, "bedrooms");
   const landSurfaceRaw = attr(attributes, "land_plot_surface");
-  // real_estate_type LBC : "1"=Maison, "2"=Appartement (observé sur fixture 2026-06)
+  // real_estate_type LBC : "1"=Maison, "2"=Appartement (observé sur fixture 2026-06).
+  // Pour les autres types (immeuble, …) on dérive du libellé humain `value_label`,
+  // puis du titre en dernier recours — évite de coder en dur des codes inconnus.
   const estateType = attr(attributes, "real_estate_type")?.toLowerCase();
+  const estateLabel = attributes.find((a) => a.key === "real_estate_type")?.value_label;
   const propertyType: PropertyType | undefined =
     estateType === "1" || estateType === "maison"
       ? "Maison"
       : estateType === "2" || estateType === "appartement"
         ? "Appartement"
-        : undefined;
+        : (toPropertyType(estateLabel) ?? toPropertyType(String(ad.subject ?? "")));
 
   const dpe = attr(attributes, "energy_rate")?.toUpperCase();
   const ges = attr(attributes, "ges")?.toUpperCase();
@@ -109,6 +135,7 @@ export function parseLeboncoin(doc: Document, url: string): Listing {
       lat: typeof location.lat === "number" ? location.lat : undefined,
       lon: typeof location.lng === "number" ? location.lng : undefined,
     },
+    geo: buildGeo(location.lat, location.lng, location.type ? String(location.type) : undefined),
     dpe: dpe && /^[A-G]$/.test(dpe) ? dpe : undefined,
     ges: ges && /^[A-G]$/.test(ges) ? ges : undefined,
     dpeKwhM2,

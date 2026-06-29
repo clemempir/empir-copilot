@@ -9,6 +9,21 @@
       name="manifest.default_icon"
       content='{ "16": "icon/16.png", "32": "icon/32.png", "48": "icon/48.png", "96": "icon/96.png", "128": "icon/128.png" }'
     />
+    <style>
+      /* Le sidepanel Chrome est draggable et son ouverture initiale est
+       * souvent < 404 px : on laisse le contenu adopter la largeur réelle
+       * du panneau, sans min-width (sinon le contenu déborde à droite et
+       * se fait clipper). */
+      html,
+      body {
+        margin: 0;
+        overflow-x: hidden;
+      }
+      body,
+      #root {
+        width: 100%;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

@@ -1,5 +1,5 @@
 export type Site = "leboncoin" | "seloger" | "bienici" | "citya" | "generic";
-export type PropertyType = "Appartement" | "Maison";
+export type PropertyType = "Appartement" | "Maison" | "Immeuble";
 
 export interface ListingLocation {
   rawAddress: string;
@@ -10,6 +10,17 @@ export interface ListingLocation {
   lat?: number;
   lon?: number;
   locationCorrected?: true;
+}
+
+/**
+ * Indice de localisation extrait de l'annonce (marqueur carte, centre de
+ * floutage). `radiusM` petit/absent ⇒ point précis ; grand ⇒ disque.
+ */
+export interface ListingGeo {
+  lat: number;
+  lon: number;
+  radiusM?: number;
+  precision?: "gps" | "disk";
 }
 
 export interface Listing {
@@ -31,6 +42,10 @@ export interface Listing {
   gesKgCO2M2?: number;
   /** Date d'établissement du DPE (ISO `yyyy-mm-dd`) si affichée. */
   dpeDate?: string;
+  /** Nombre de logements (immeuble) si l'annonce l'expose. */
+  apartmentCount?: number;
+  /** Localisation approximative (marqueur carte / centre de floutage). */
+  geo?: ListingGeo;
   description: string;
   photos: string[];
   publishedAt?: string;

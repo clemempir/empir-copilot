@@ -1,16 +1,16 @@
-import { Copy, ExternalLink, Heart } from "lucide-react";
+import { ExternalLink, Heart, MapPin, User } from "lucide-react";
 import type { Listing, QuickAnalysis } from "@empir/core";
 import type { ResolvedAddress } from "@empir/core";
 import {
   ComparablePriceCard,
-  ConfidencePill,
   DataRow,
   DpeBars,
-  EmpirLogo,
+  type DpeClass,
   RiskRow,
   type RiskLevel,
   SalesTimeline,
   ScoreGauge,
+  SectionHeader,
   UrbanismeCard,
 } from "@/components/empir";
 
@@ -19,20 +19,49 @@ export interface ResultViewProps {
   quick: QuickAnalysis;
   resolvedAddress?: ResolvedAddress;
   comparablesMeta?: string;
-  /** Tableau de risques (label + niveau). */
   risks?: { label: string; level: RiskLevel; statusLabel?: string }[];
-  /** Zones d'urbanisme. */
   urbanisme?: { zone: string; subtitle?: string; description?: string; tone?: "default" | "warn" | "info" }[];
-  /** Ventes DVF historiques pour le timeline. */
   salesHistory?: { year: number; price: number }[];
-  /** Usage counter ("3 / 15 ce mois-ci"). */
   usage?: { used: number; limit: number };
+  /** Notification non lue → pastille rouge sur le bouton compte. */
+  hasUnread?: boolean;
   onSaveClick: () => void;
   onAccountClick: () => void;
   saved?: boolean;
 }
 
-const fmtEur = (n: number) => `${n.toLocaleString("fr-FR")} €`;
+function splitAddress(addr: string): { line1: string; line2?: string } {
+  const m = addr.match(/^(.*?)(?:\s+)(\d{5}\b.*)$/);
+  if (m) return { line1: m[1]!.trim(), line2: m[2]!.trim() };
+  return { line1: addr };
+}
+
+type PropertyKind = "house" | "apartment" | "immeuble";
+
+const PROPERTY_VISUALS: Record<PropertyKind, { src: string; alt: string; label: string }> = {
+  house: {
+    src: "/property/house.png",
+    alt: "Visuel isométrique d'une maison",
+    label: "Maison",
+  },
+  apartment: {
+    src: "/property/apartment.png",
+    alt: "Visuel isométrique d'un appartement",
+    label: "Appartement",
+  },
+  immeuble: {
+    src: "/property/immeuble.png",
+    alt: "Visuel isométrique d'un immeuble",
+    label: "Immeuble",
+  },
+};
+
+function propertyKind(listing: Listing): PropertyKind {
+  const title = (listing.title ?? "").toLowerCase();
+  if (/immeuble|rapport/.test(title)) return "immeuble";
+  if (listing.propertyType === "Maison") return "house";
+  return "apartment";
+}
 
 export function ResultView({
   listing,
@@ -42,182 +71,273 @@ export function ResultView({
   risks = [],
   urbanisme = [],
   salesHistory = [],
-  usage,
+  hasUnread,
   onSaveClick,
   onAccountClick,
   saved,
 }: ResultViewProps) {
-  const address = resolvedAddress?.address ?? listing.location.rawAddress;
+  const address = resolvedAddress?.address ?? listing.location.rawAddress ?? "";
+  const { line1, line2 } = splitAddress(address);
+  const propVisual = PROPERTY_VISUALS[propertyKind(listing)];
+  const mapsHref = address
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+    : null;
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
-      <header className="flex items-center justify-between border-b border-empir-line px-4 py-3">
-        <EmpirLogo size="sm" />
-        <div className="flex items-center gap-2">
-          {usage && (
-            <span className="text-[10.5px] text-empir-muted-2 tabular-nums">
-              {usage.used}/{usage.limit} ce mois-ci
-            </span>
-          )}
+      {/* Ambient glow */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-[340px]"
+        style={{
+          background:
+            "radial-gradient(120% 80% at 70% -10%, rgba(124,108,255,0.22), transparent 60%)",
+        }}
+      />
+
+      {/* Sticky header */}
+      <header
+        className="sticky top-0 z-10 flex items-end justify-between border-b px-[18px] pb-[13px] pt-[22px]"
+        style={{
+          background: "#0d121d",
+          borderBottomColor: "rgba(255,255,255,0.06)",
+        }}
+      >
+        <div className="flex flex-col leading-none">
+          <span className="text-[15px] font-bold tracking-[0.16em] text-empir-text">
+            EMPIR Copilot
+          </span>
+          <span className="mt-1 max-w-[220px] text-[8px] font-semibold uppercase leading-[1.3] tracking-[0.08em] text-empir-muted-2">
+            Reprenez le contrôle de l'information
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={onSaveClick}
+            title={saved ? "Retirer des biens sauvegardés" : "Sauvegarder l'annonce"}
+            className="grid size-8 place-items-center rounded-[9px] transition-all"
+            style={{
+              background: saved ? "rgba(124,108,255,0.18)" : "transparent",
+              border: "none",
+            }}
+          >
+            <Heart
+              className="size-4"
+              style={{
+                fill: saved ? "#b7acff" : "none",
+                stroke: saved ? "#b7acff" : "#aeb6c5",
+                strokeWidth: 1.8,
+              }}
+            />
+          </button>
           <button
             type="button"
             onClick={onAccountClick}
-            className="size-7 rounded-empir-pill bg-gradient-to-br from-empir-primary to-empir-primary-dark text-[11px] font-semibold text-white"
-            aria-label="Mon compte"
+            title="Mon compte"
+            className="relative grid size-8 place-items-center rounded-[9px] bg-transparent"
           >
-            E
+            <User className="size-4 text-empir-muted" strokeWidth={1.8} />
+            {hasUnread && (
+              <span
+                className="absolute right-[5px] top-[4px] size-[7px] rounded-full"
+                style={{
+                  background: "#ff5d73",
+                  border: "1.5px solid #0d121d",
+                }}
+              />
+            )}
           </button>
         </div>
       </header>
 
-      <div className="empir-scroll flex-1 overflow-y-auto px-4 py-4">
-        {/* Hero */}
-        <section className="flex items-start gap-4 rounded-empir-card-lg border border-empir-line bg-empir-card p-4">
-          <div className="min-w-0 flex-1">
-            <div className="text-[10px] uppercase tracking-[0.18em] text-empir-muted-2">
-              {listing.propertyType ?? "Bien immobilier"}
-            </div>
-            <h1 className="mt-1 line-clamp-2 text-[15.5px] font-semibold leading-tight text-empir-text">
-              {listing.title}
-            </h1>
-            <button
-              type="button"
-              onClick={() => void navigator.clipboard.writeText(address).catch(() => {})}
-              className="mt-2 inline-flex items-center gap-1.5 text-[11.5px] text-empir-muted hover:text-empir-text"
-              title="Copier l'adresse"
-            >
-              <Copy className="size-3" />
-              <span className="truncate">{address}</span>
-            </button>
-            <div className="mt-2 flex items-center gap-2 text-[10.5px] text-empir-muted-2">
-              <a href={listing.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:text-empir-accent">
-                <ExternalLink className="size-3" />
-                {new URL(listing.url).hostname}
-              </a>
-              <span>·</span>
-              <span className="tabular-nums">{fmtEur(listing.price)}</span>
-            </div>
-          </div>
-          <div className="flex flex-col items-end gap-2">
-            <button
-              type="button"
-              onClick={onSaveClick}
-              className="grid size-8 place-items-center rounded-empir-pill border border-empir-line bg-empir-card hover:bg-white/10"
-              aria-label={saved ? "Retirer des biens sauvegardés" : "Sauvegarder l'annonce"}
-            >
-              <Heart
-                className={
-                  saved
-                    ? "size-4 fill-empir-danger text-empir-danger"
-                    : "size-4 text-empir-muted"
-                }
+      <div className="empir-scroll relative flex-1 overflow-y-auto px-[18px] pb-7">
+        {/* ─── HERO ─── */}
+        <section
+          className="mt-[14px] rounded-[14px] border p-4"
+          style={{
+            background:
+              "linear-gradient(160deg, rgba(30,36,54,0.66), rgba(16,21,33,0.66))",
+            borderColor: "rgba(255,255,255,0.07)",
+          }}
+        >
+          <div className="flex items-center gap-[13px]">
+            {/* Iso visual */}
+            <div className="relative grid size-[98px] shrink-0 place-items-center">
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-0"
+                style={{
+                  background:
+                    "radial-gradient(ellipse at 50% 45%, rgba(124,108,255,0.45), transparent 68%)",
+                }}
               />
-            </button>
-            <ScoreGauge score={quick.score} size={88} stroke={7} />
-            {resolvedAddress && <ConfidencePill value={resolvedAddress.confidence} />}
+              <img
+                src={propVisual.src}
+                alt={propVisual.alt}
+                className="relative size-[104px] object-contain"
+                style={{ filter: "drop-shadow(0 6px 12px rgba(0,0,0,0.5))" }}
+              />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[14px] font-semibold text-empir-text">
+                {propVisual.label}
+              </div>
+              <div className="mt-2 flex items-start gap-[5px]">
+                <MapPin
+                  className="mt-[1px] size-[11px] shrink-0 text-empir-muted-2"
+                  strokeWidth={1.8}
+                />
+                <div className="min-w-0 flex-1 text-[10px] leading-[1.4] text-empir-muted">
+                  {line1}
+                  {line2 && (
+                    <>
+                      <br />
+                      <span className="text-empir-muted-2">{line2}</span>
+                    </>
+                  )}
+                </div>
+                {mapsHref && (
+                  <a
+                    href={mapsHref}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Ouvrir dans Google Maps"
+                    className="grid size-[22px] shrink-0 place-items-center rounded-[6px] transition-all hover:bg-white/10"
+                    style={{ background: "rgba(255,255,255,0.05)" }}
+                  >
+                    <ExternalLink
+                      className="size-3 text-empir-muted"
+                      strokeWidth={1.8}
+                    />
+                  </a>
+                )}
+              </div>
+              {resolvedAddress && (
+                <div className="mt-[9px] flex flex-wrap items-center gap-[6px]">
+                  <span
+                    className="rounded-empir-pill px-[7px] py-[2px] text-[10px] font-bold"
+                    style={
+                      resolvedAddress.confidence < 60
+                        ? { background: "rgba(239,68,68,0.14)", color: "#f87171" }
+                        : { background: "rgba(34,197,94,0.14)", color: "#4ade80" }
+                    }
+                  >
+                    {Math.round(resolvedAddress.confidence)}%
+                  </span>
+                  <span className="text-[8.5px] tracking-[0.02em] text-empir-muted-2">
+                    fiabilité localisation
+                  </span>
+                </div>
+              )}
+            </div>
+            <div className="flex shrink-0 flex-col items-center gap-1">
+              <ScoreGauge score={quick.score} size={48} />
+              <span className="text-[6px] font-bold tracking-[0.1em] text-empir-accent">
+                SCORE PRIX
+              </span>
+            </div>
           </div>
         </section>
 
-        {/* Caractéristiques */}
-        <section className="mt-4 rounded-empir-card border border-empir-line bg-empir-card p-3.5">
-          <h3 className="text-[10.5px] uppercase tracking-[0.18em] text-empir-muted-2">
-            Caractéristiques
-          </h3>
-          <div className="mt-1">
-            {listing.surface != null && (
-              <DataRow label="Surface" value={`${listing.surface} m²`} />
-            )}
-            {listing.rooms != null && (
-              <DataRow label="Pièces" value={`${listing.rooms} pièces`} />
-            )}
-            {listing.bedrooms != null && (
-              <DataRow label="Chambres" value={`${listing.bedrooms} chambres`} />
-            )}
-            {listing.landSurface != null && (
-              <DataRow label="Terrain" value={`${listing.landSurface} m²`} />
-            )}
-            {listing.dpe && <DataRow label="DPE annoncé" value={listing.dpe} />}
-          </div>
-        </section>
+        {/* ─── CARACTÉRISTIQUES ─── */}
+        <SectionHeader label="Caractéristiques du bien" />
 
-        {/* Prix comparables */}
         {quick.market && (
-          <section className="mt-4">
-            <ComparablePriceCard
-              medianPpm2={quick.market.medianPricePerM2}
-              gapPct={quick.marketGapPct}
-              meta={
-                comparablesMeta ??
-                `${quick.market.sampleSize} ventes · rayon ${Math.round(quick.market.radiusM)} m${
-                  quick.market.windowMonths ? ` · ${quick.market.windowMonths} derniers mois` : ""
-                }${quick.market.p25PricePerM2 && quick.market.p75PricePerM2 ? ` · P25-P75 ${quick.market.p25PricePerM2}-${quick.market.p75PricePerM2} €/m²` : ""}`
-              }
-            />
-          </section>
+          <ComparablePriceCard
+            medianPpm2={quick.market.medianPricePerM2}
+            gapPct={quick.marketGapPct}
+            meta={
+              comparablesMeta ??
+              `${quick.market.sampleSize} ventes · rayon ${Math.round(quick.market.radiusM)} m${
+                quick.market.windowMonths ? ` · ${quick.market.windowMonths} derniers mois` : ""
+              }${
+                quick.market.p25PricePerM2 && quick.market.p75PricePerM2
+                  ? ` · P25-P75 : ${quick.market.p25PricePerM2}–${quick.market.p75PricePerM2} €`
+                  : ""
+              }`
+            }
+          />
         )}
 
-        {/* DPE vérifié */}
-        {resolvedAddress?.verifiedDpe && (
-          <section className="mt-4 rounded-empir-card border border-empir-line bg-empir-card p-3.5">
-            <h3 className="text-[10.5px] uppercase tracking-[0.18em] text-empir-muted-2">
-              DPE vérifié (ADEME)
-            </h3>
-            <div className="mt-3">
-              <DpeBars
-                announced={listing.dpe?.toUpperCase() as "A" | undefined}
-                verified={resolvedAddress.verifiedDpe.class}
-                note={
-                  listing.dpe && resolvedAddress.verifiedDpe.class !== listing.dpe.toUpperCase()
-                    ? `Écart d'une classe entre l'annonce et la base ADEME — ${resolvedAddress.verifiedDpe.kwhM2} kWh/m²/an mesurés.`
-                    : `${resolvedAddress.verifiedDpe.kwhM2} kWh/m²/an · ${resolvedAddress.verifiedDpe.gesKgCO2M2} kg CO₂/m²/an.`
-                }
-              />
+        <div
+          className={`${quick.market ? "mt-[11px]" : ""} rounded-empir-card border border-empir-line px-[14px]`}
+          style={{ background: "rgba(28,34,50,0.5)" }}
+        >
+          {listing.surface != null && (
+            <DataRow label="Surface habitable" value={`${listing.surface} m²`} />
+          )}
+          {listing.landSurface != null && (
+            <DataRow label="Surface parcelle" value={`${listing.landSurface} m²`} />
+          )}
+          {listing.rooms != null && (
+            <DataRow label="Pièces" value={`${listing.rooms} pièces`} />
+          )}
+          {listing.bedrooms != null && (
+            <DataRow label="Chambres" value={`${listing.bedrooms} chambres`} />
+          )}
+          {resolvedAddress?.parcelId && (
+            <DataRow label="Cadastre" value={resolvedAddress.parcelId} />
+          )}
+        </div>
+
+        {/* ─── HISTORIQUE DE VENTE ─── */}
+        {salesHistory.length >= 2 && (
+          <>
+            <SectionHeader label="Historique de vente" />
+            <div className="px-[2px] pt-1 pb-[2px]">
+              <SalesTimeline nodes={salesHistory} />
             </div>
-          </section>
+          </>
         )}
 
-        {/* Risques */}
+        {/* ─── URBANISME ─── */}
+        {urbanisme.length > 0 && (
+          <>
+            <SectionHeader label="Urbanisme" />
+            <div className="space-y-2">
+              {urbanisme.map((u, i) => (
+                <UrbanismeCard key={`${u.zone}-${i}`} {...u} />
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* ─── RISQUES ─── */}
         {risks.length > 0 && (
-          <section className="mt-4 rounded-empir-card border border-empir-line bg-empir-card p-3.5">
-            <h3 className="text-[10.5px] uppercase tracking-[0.18em] text-empir-muted-2">
-              Risques (Géorisques)
-            </h3>
-            <div className="mt-1">
+          <>
+            <SectionHeader label="Risques" />
+            <div
+              className="rounded-empir-card border border-empir-line px-[14px]"
+              style={{ background: "rgba(28,34,50,0.5)" }}
+            >
               {risks.map((r, i) => (
                 <RiskRow key={`${r.label}-${i}`} {...r} />
               ))}
             </div>
-          </section>
+          </>
         )}
 
-        {/* Urbanisme */}
-        {urbanisme.length > 0 && (
-          <section className="mt-4 space-y-2">
-            <h3 className="px-1 text-[10.5px] uppercase tracking-[0.18em] text-empir-muted-2">
-              Urbanisme (PLU)
-            </h3>
-            {urbanisme.map((u, i) => (
-              <UrbanismeCard key={`${u.zone}-${i}`} {...u} />
-            ))}
-          </section>
-        )}
-
-        {/* Historique ventes */}
-        {salesHistory.length >= 2 && (
-          <section className="mt-4 rounded-empir-card border border-empir-line bg-empir-card p-3.5">
-            <h3 className="text-[10.5px] uppercase tracking-[0.18em] text-empir-muted-2">
-              Historique des ventes
-            </h3>
-            <div className="mt-4">
-              <SalesTimeline nodes={salesHistory} />
+        {/* ─── DPE RÉEL ─── */}
+        {resolvedAddress?.verifiedDpe && (
+          <>
+            <SectionHeader label="DPE réel" />
+            <div
+              className="rounded-empir-card border border-empir-line p-[14px]"
+              style={{ background: "rgba(28,34,50,0.5)" }}
+            >
+              <DpeBars
+                announced={listing.dpe?.toUpperCase() as DpeClass | undefined}
+                verified={resolvedAddress.verifiedDpe.class as DpeClass}
+                note={`${resolvedAddress.verifiedDpe.kwhM2} kWh/m²/an · ${resolvedAddress.verifiedDpe.gesKgCO2M2} kg CO₂/m²/an`}
+              />
             </div>
-          </section>
+          </>
         )}
 
-        <footer className="mt-6 text-center text-[9.5px] text-empir-muted-2">
-          EMPIR · v0.1.0 · données ADEME, DVF, BAN, Géorisques, IGN, geo.api.gouv.fr
-        </footer>
+        <div className="mt-4 text-center text-[8px] font-semibold uppercase tracking-[0.2em] text-empir-disabled">
+          EMPIR · Bâtisseur d'Empire
+        </div>
       </div>
     </div>
   );

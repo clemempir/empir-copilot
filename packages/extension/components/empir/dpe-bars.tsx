@@ -4,73 +4,84 @@ import { cn } from "@/lib/utils";
 export type DpeClass = "A" | "B" | "C" | "D" | "E" | "F" | "G";
 
 export interface DpeBarsProps {
-  /** Classe annoncée dans l'annonce. */
   announced?: DpeClass;
-  /** Classe réelle issue de l'ADEME (résolveur). */
   verified?: DpeClass;
-  /** Légende sous les barres (ex. "~+380 €/an d'énergie vs annonce"). */
+  /** Légende sous les barres. */
   note?: string;
   className?: string;
 }
 
 const ALL: DpeClass[] = ["A", "B", "C", "D", "E", "F", "G"];
 const HEIGHTS: Record<DpeClass, number> = {
-  A: 24,
-  B: 32,
-  C: 42,
-  D: 52,
-  E: 62,
-  F: 72,
-  G: 82,
+  A: 18,
+  B: 24,
+  C: 30,
+  D: 36,
+  E: 42,
+  F: 48,
+  G: 54,
 };
-const COLORS: Record<DpeClass, string> = {
-  A: "bg-empir-dpe-a",
-  B: "bg-empir-dpe-b",
-  C: "bg-empir-dpe-c",
-  D: "bg-empir-dpe-d",
-  E: "bg-empir-dpe-e",
-  F: "bg-empir-dpe-f",
-  G: "bg-empir-dpe-g",
+const BG: Record<DpeClass, string> = {
+  A: "#1f9d55",
+  B: "#5cb85c",
+  C: "#a9d04b",
+  D: "#f5d046",
+  E: "#f0a93b",
+  F: "#e8702e",
+  G: "#d63b2f",
 };
 
-/**
- * Histogramme DPE A-G. Si `announced` et `verified` divergent, les deux sont
- * marqués (annoncé en silhouette grise, vérifié en couleur pleine).
- */
 export function DpeBars({ announced, verified, note, className }: DpeBarsProps) {
   return (
-    <div className={cn("space-y-2.5", className)}>
-      <div className="flex items-end gap-1.5">
+    <div className={cn("space-y-3", className)}>
+      {(announced || verified) && (
+        <div className="flex items-center justify-between text-[12px] text-empir-muted-2">
+          <span>
+            Annoncé{" "}
+            <span className="font-bold text-empir-success">{announced ?? "—"}</span>
+          </span>
+          <span>
+            Vérifié réel{" "}
+            <span className="font-bold text-empir-warn-soft">{verified ?? "—"}</span>
+          </span>
+        </div>
+      )}
+      <div className="flex items-end gap-1">
         {ALL.map((c) => {
-          const isAnnounced = c === announced;
           const isVerified = c === verified;
-          const active = isVerified || (isAnnounced && !verified);
+          const isAnnounced = c === announced;
+          const active = isVerified || isAnnounced;
+          const mark = isVerified ? "▼" : isAnnounced ? "·" : "";
+          const markColor = isVerified
+            ? "var(--color-empir-warn-soft)"
+            : isAnnounced
+              ? "var(--color-empir-success)"
+              : "transparent";
           return (
-            <div key={c} className="flex flex-1 flex-col items-center gap-1">
-              <div
-                className={cn(
-                  "w-full rounded-t-[3px] transition-all",
-                  active ? COLORS[c] : "bg-white/8",
-                )}
-                style={{ height: `${HEIGHTS[c]}px`, opacity: active ? 1 : 0.5 }}
+            <div key={c} className="flex flex-1 flex-col items-center gap-1.5">
+              <span
+                className="h-[11px] text-[9px] leading-none"
+                style={{ color: markColor }}
               >
-                <div className="pt-1 text-center text-[10px] font-semibold text-white">{c}</div>
+                {mark}
+              </span>
+              <div
+                className="grid w-full place-items-center rounded-[3px]"
+                style={{
+                  height: HEIGHTS[c],
+                  backgroundColor: BG[c],
+                  opacity: active ? 1 : 0.32,
+                }}
+              >
+                <span className="text-[10px] font-bold text-[#0b0f17]">{c}</span>
               </div>
-              {isAnnounced && verified && verified !== announced && (
-                <div className="text-[8.5px] uppercase tracking-[0.12em] text-empir-muted-2">
-                  annoncé
-                </div>
-              )}
-              {isVerified && (
-                <div className="text-[8.5px] uppercase tracking-[0.12em] text-empir-accent">
-                  vérifié
-                </div>
-              )}
             </div>
           );
         })}
       </div>
-      {note && <p className="text-[10.5px] leading-snug text-empir-muted-2">{note}</p>}
+      {note && (
+        <p className="text-[11px] leading-snug text-empir-muted-2">{note}</p>
+      )}
     </div>
   );
 }
