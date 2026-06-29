@@ -11,26 +11,26 @@ function mockFetch(body: unknown, status = 200): typeof fetch {
 }
 
 describe("fetchAdemeCertificates", () => {
-  it("compose une URL avec qs Lucene sur code_postal_ban", async () => {
+  it("compose une URL avec filtre code_postal_ban_eq sur le dataset dpe03existant", async () => {
     const fetchFn = vi.fn(async () =>
       new Response(JSON.stringify({ results: [] })),
     ) as unknown as typeof fetch;
     await fetchAdemeCertificates({ postalCode: "75003", fetchFn });
     const calledUrl = (fetchFn as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
-    expect(calledUrl).toContain("dpe-v2-logements-existants");
-    expect(decodeURIComponent(calledUrl)).toContain('code_postal_ban:"75003"');
+    expect(calledUrl).toContain("dpe03existant");
+    expect(calledUrl).toContain("code_postal_ban_eq=75003");
   });
 
-  it("ajoute un filtre type_batiment quand propertyType fourni", async () => {
+  it("ajoute un filtre type_batiment_eq quand propertyType fourni", async () => {
     const fetchFn = vi.fn(async () =>
       new Response(JSON.stringify({ results: [] })),
     ) as unknown as typeof fetch;
     await fetchAdemeCertificates({ postalCode: "75003", buildingType: "Appartement", fetchFn });
     const url = (fetchFn as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string;
-    expect(decodeURIComponent(url)).toContain('type_batiment:"appartement"');
+    expect(url).toContain("type_batiment_eq=appartement");
   });
 
-  it("normalise les certificats (numero_dpe, surface, etc.)", async () => {
+  it("normalise les certificats (numero_dpe, surface, _geopoint, etc.)", async () => {
     const fetchFn = mockFetch({
       results: [
         {
@@ -38,8 +38,7 @@ describe("fetchAdemeCertificates", () => {
           adresse_ban: "18 Rue Béranger 75003 Paris",
           code_postal_ban: "75003",
           nom_commune_ban: "Paris",
-          ban_y: 48.8674,
-          ban_x: 2.3635,
+          _geopoint: "48.8674,2.3635",
           surface_habitable_logement: 88,
           type_batiment: "appartement",
           etiquette_dpe: "C",
@@ -55,6 +54,8 @@ describe("fetchAdemeCertificates", () => {
     const c = certs[0]!;
     expect(c.certId).toBe("2389E10000XYZ");
     expect(c.surface).toBe(88);
+    expect(c.lat).toBeCloseTo(48.8674, 4);
+    expect(c.lon).toBeCloseTo(2.3635, 4);
     expect(c.dpeClass).toBe("C");
     expect(c.dpeKwhM2).toBe(165);
     expect(c.yearBuilt).toBe(1976);

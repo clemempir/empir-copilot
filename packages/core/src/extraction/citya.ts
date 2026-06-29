@@ -1,5 +1,14 @@
 import type { Listing } from "../types";
-import { buildRawAddress, toLetter, toNumber, toPropertyType, toStr } from "./mapping";
+import {
+  buildRawAddress,
+  extractDpeDate,
+  extractGesKgM2,
+  extractKwhM2,
+  toLetter,
+  toNumber,
+  toPropertyType,
+  toStr,
+} from "./mapping";
 
 const UNKNOWN = "citya: structure inconnue";
 
@@ -88,6 +97,9 @@ function tryRealEstateListing(
   // image lives at RealEstateListing level
   const photos = readImages(n.image ?? topImage);
 
+  // Valeurs numériques DPE/GES + date : regex sur description + titre.
+  const energyBlob = `${description} ${title}`;
+
   return {
     title,
     price,
@@ -95,6 +107,9 @@ function tryRealEstateListing(
     rooms,
     propertyType,
     location: { rawAddress: buildRawAddress(city, postalCode, undefined), city, postalCode },
+    dpeKwhM2: extractKwhM2(energyBlob),
+    gesKgCO2M2: extractGesKgM2(energyBlob),
+    dpeDate: extractDpeDate(energyBlob),
     description,
     photos,
   };
@@ -117,6 +132,8 @@ function tryLegacyProduct(
   const address = (n.address ?? {}) as Record<string, unknown>;
   const city = toStr(address.addressLocality);
   const postalCode = toStr(address.postalCode);
+  const description = toStr(n.description) ?? "";
+  const energyBlob = `${description} ${toStr(n.name) ?? ""}`;
 
   return {
     title: toStr(n.name) ?? "",
@@ -125,7 +142,10 @@ function tryLegacyProduct(
     location: { rawAddress: buildRawAddress(city, postalCode, undefined), city, postalCode },
     dpe: toLetter((n as Record<string, unknown>).energyEfficiencyScaleMin),
     ges: toLetter((n as Record<string, unknown>).co2EmissionsScaleMin),
-    description: toStr(n.description) ?? "",
+    dpeKwhM2: extractKwhM2(energyBlob),
+    gesKgCO2M2: extractGesKgM2(energyBlob),
+    dpeDate: extractDpeDate(energyBlob),
+    description,
     photos: readImages(n.image),
   };
 }

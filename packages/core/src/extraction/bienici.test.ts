@@ -1,75 +1,101 @@
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parseBienici } from "./bienici";
 
-function docWith(html: string): Document {
+const html = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "__fixtures__/bienici-immo-facile-57473578.html"),
+  "utf8",
+);
+
+function loadDoc(): Document {
   const doc = document.implementation.createHTMLDocument();
   doc.documentElement.innerHTML = html;
   return doc;
 }
 
-const url = "https://www.bienici.com/annonce/vente/nantes/appartement/3pieces/abc-123";
+function docWith(innerHtml: string): Document {
+  const doc = document.implementation.createHTMLDocument();
+  doc.documentElement.innerHTML = innerHtml;
+  return doc;
+}
 
-describe("parseBienici", () => {
-  it("jette « structure inconnue » quand aucun état embarqué n'est trouvé", () => {
+const REAL_URL =
+  "https://www.bienici.com/annonce/vente/bordeaux/appartement/1piece/immo-facile-57473578";
+
+describe("parseBienici (fixture réelle Bordeaux 57473578)", () => {
+  it("extrait titre, prix et image depuis le JSON-LD Product", () => {
+    const r = parseBienici(loadDoc(), REAL_URL);
+    expect(r.site).toBe("bienici");
+    expect(r.title.replace(/ /g, " ")).toBe(
+      "Achat appartement 1 pièce 27 m², Bordeaux - 136 370 €",
+    );
+    expect(r.price).toBe(136370);
+    expect(r.photos.length).toBeGreaterThan(0);
+    expect(r.photos[0]).toMatch(/file\.bienici\.com\/photo\/immo-facile-57473578/);
+  });
+
+  it("extrait surface, pièces, ville et code postal depuis le JSON-LD Accommodation", () => {
+    const r = parseBienici(loadDoc(), REAL_URL);
+    expect(r.surface).toBeCloseTo(26.58, 2);
+    expect(r.rooms).toBe(1);
+    expect(r.location.city).toBe("Bordeaux");
+    expect(r.location.postalCode).toBe("33000");
+    expect(r.location.rawAddress).toBe("Bordeaux 33000");
+  });
+
+  it("lit DPE/GES depuis la ligne .active du diagnostic", () => {
+    const r = parseBienici(loadDoc(), REAL_URL);
+    expect(r.dpe).toBe("E");
+    expect(r.ges).toBe("B");
+  });
+
+  it("déduit propertyType depuis l'URL", () => {
+    const r = parseBienici(loadDoc(), REAL_URL);
+    expect(r.propertyType).toBe("Appartement");
+  });
+});
+
+describe("parseBienici (cas d'erreur)", () => {
+  it("jette « structure inconnue » sans JSON-LD Product", () => {
     const doc = docWith("<body><h1>Annonce</h1></body>");
-    expect(() => parseBienici(doc, url)).toThrow(/structure inconnue/i);
+    expect(() => parseBienici(doc, REAL_URL)).toThrow(/structure inconnue/i);
   });
 
-  it("jette quand le script d'état contient un JSON illisible", () => {
+  it("jette quand le JSON-LD Product n'a pas de prix", () => {
     const doc = docWith(
-      `<body><script type="application/json" data-testid="ad">{cassé{</script></body>`,
+      `<body><script type="application/ld+json">${JSON.stringify({
+        "@context": "http://schema.org",
+        "@type": "Product",
+        name: "Sans prix",
+      })}</script></body>`,
     );
-    expect(() => parseBienici(doc, url)).toThrow(/structure inconnue/i);
+    expect(() => parseBienici(doc, REAL_URL)).toThrow(/structure inconnue/i);
   });
 
-  it("extrait un Listing depuis une structure JSON plausible (ld+json ou état)", () => {
-    const ad = {
-      title: "Appartement 3 pièces",
-      propertyType: "flat",
-      price: 289000,
-      surfaceArea: 64,
-      roomsQuantity: 3,
-      city: "Nantes",
-      postalCode: "44000",
-      district: { name: "Centre-ville" },
-      energyClassification: "C",
-      greenhouseGazClassification: "D",
-      description: "Bel appartement de 64 m² proche tram.",
-      publicationDate: "2026-05-01T00:00:00Z",
-      photos: [{ url: "https://photo.bienici.com/1.jpg" }],
-    };
+  it("supporte un prix dans offers.price directement (sans priceSpecification)", () => {
     const doc = docWith(
-      `<body><script type="application/json" data-testid="ad-data">${JSON.stringify(ad)}</script></body>`,
+      `<body><script type="application/ld+json">${JSON.stringify({
+        "@context": "http://schema.org",
+        "@type": "Product",
+        name: "Test",
+        offers: { "@type": "Offer", price: 250000, priceCurrency: "EUR" },
+      })}</script></body>`,
     );
-    const result = parseBienici(doc, url);
-    expect(result.site).toBe("bienici");
-    expect(result.title).toBe("Appartement 3 pièces");
-    expect(result.price).toBe(289000);
-    expect(result.surface).toBe(64);
-    expect(result.rooms).toBe(3);
-    expect(result.propertyType).toBe("Appartement");
-    expect(result.location.city).toBe("Nantes");
-    expect(result.location.postalCode).toBe("44000");
-    expect(result.location.district).toBe("Centre-ville");
-    expect(result.dpe).toBe("C");
-    expect(result.ges).toBe("D");
-    expect(result.photos).toEqual(["https://photo.bienici.com/1.jpg"]);
-    expect(result.publishedAt).toBe("2026-05-01T00:00:00Z");
+    expect(parseBienici(doc, REAL_URL).price).toBe(250000);
   });
 
-  it("propertyType « house » → Maison", () => {
-    const ad = { title: "Maison", propertyType: "house", price: 350000, city: "Lyon" };
+  it("URL /maison/ → propertyType Maison", () => {
     const doc = docWith(
-      `<body><script type="application/json" data-testid="ad-data">${JSON.stringify(ad)}</script></body>`,
+      `<body><script type="application/ld+json">${JSON.stringify({
+        "@context": "http://schema.org",
+        "@type": "Product",
+        name: "Maison",
+        offers: { priceSpecification: { price: 450000 } },
+      })}</script></body>`,
     );
+    const url = "https://www.bienici.com/annonce/vente/lyon/maison/5pieces/abc-123";
     expect(parseBienici(doc, url).propertyType).toBe("Maison");
-  });
-
-  it("jette quand l'état est présent mais sans prix exploitable", () => {
-    const ad = { title: "Sans prix" };
-    const doc = docWith(
-      `<body><script type="application/json" data-testid="ad-data">${JSON.stringify(ad)}</script></body>`,
-    );
-    expect(() => parseBienici(doc, url)).toThrow(/structure inconnue/i);
   });
 });

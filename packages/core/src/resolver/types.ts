@@ -12,7 +12,12 @@ export interface ResolverInput {
   dpeKwhM2?: number;
   /** kg CO₂/m²/an (émissions GES). */
   gesKgCO2M2?: number;
+  /** Lettre A-G GES affichée sur l'annonce — fallback quand le chiffre manque. */
+  gesClass?: "A" | "B" | "C" | "D" | "E" | "F" | "G";
+  /** Surface du terrain en m² (annonce) — comparée à la contenance cadastrale. */
   landSurface?: number;
+  /** Date d'établissement du DPE annoncé (ISO `yyyy-mm-dd`). */
+  dpeDate?: string;
   /** Type de bien d'après l'annonce (filtre ADEME). */
   propertyType?: "Appartement" | "Maison";
 }

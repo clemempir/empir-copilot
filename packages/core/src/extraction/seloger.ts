@@ -1,5 +1,14 @@
 import type { Listing } from "../types";
-import { buildRawAddress, toLetter, toNumber, toPropertyType, toStr } from "./mapping";
+import {
+  buildRawAddress,
+  extractDpeDate,
+  extractGesKgM2,
+  extractKwhM2,
+  toLetter,
+  toNumber,
+  toPropertyType,
+  toStr,
+} from "./mapping";
 
 const UNKNOWN = "seloger: structure inconnue";
 
@@ -139,6 +148,18 @@ function extractDpe(
   return undefined;
 }
 
+/** Valeur numérique d'un barème énergie (le `value` SeLoger porte souvent le chiffre). */
+function extractScaleNumber(
+  scales: Array<{ name?: string; rating?: string; value?: string }> | undefined,
+): number | undefined {
+  if (!scales) return undefined;
+  for (const scale of scales) {
+    const n = toNumber(scale.value);
+    if (n != null && n > 0) return n;
+  }
+  return undefined;
+}
+
 function buildListing(state: SelogerState, url: string): Listing {
   const classified = state.app_cldp?.data?.classified;
   if (!classified) throw new Error(UNKNOWN);
@@ -187,6 +208,11 @@ function buildListing(state: SelogerState, url: string): Listing {
   const gesScales = certificates[1]?.scales;
   const dpe = extractDpe(dpeScales);
   const ges = extractDpe(gesScales);
+  // Valeurs numériques DPE/GES : barème énergie en priorité, sinon regex sur la
+  // description.
+  const dpeKwhM2 = extractScaleNumber(dpeScales) ?? extractKwhM2(description);
+  const gesKgCO2M2 = extractScaleNumber(gesScales) ?? extractGesKgM2(description);
+  const dpeDate = extractDpeDate(description);
 
   // Attributes from features.details.categories
   const categories = sections?.features?.details?.categories ?? [];
@@ -208,6 +234,9 @@ function buildListing(state: SelogerState, url: string): Listing {
     },
     dpe,
     ges,
+    dpeKwhM2,
+    gesKgCO2M2,
+    dpeDate,
     description,
     photos,
     publishedAt: toStr(classified.metadata?.creationDate),

@@ -31,6 +31,9 @@ interface Listing {
   };
   dpe?: string;
   ges?: string;
+  dpeKwhM2?: number;
+  gesKgCO2M2?: number;
+  dpeDate?: string;
   attributes?: { label: string; value: string }[];
 }
 
@@ -74,6 +77,10 @@ Deno.serve(async (req: Request) => {
         landSurface: body.listing.landSurface,
         propertyType: body.listing.propertyType,
         dpeClass: parseDpe(body.listing.dpe),
+        dpeKwhM2: body.listing.dpeKwhM2,
+        gesKgCO2M2: body.listing.gesKgCO2M2,
+        gesClass: parseDpe(body.listing.ges),
+        dpeDate: body.listing.dpeDate,
         yearBuilt: extractYearBuilt(body.listing.attributes),
       },
     }),

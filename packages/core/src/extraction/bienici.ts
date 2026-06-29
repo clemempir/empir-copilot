@@ -1,90 +1,139 @@
-import type { Listing } from "../types";
-import { buildRawAddress, toLetter, toNumber, toPropertyType, toStr } from "./mapping";
+import type { Listing, PropertyType } from "../types";
+import {
+  buildRawAddress,
+  extractDpeDate,
+  extractGesKgM2,
+  extractKwhM2,
+  toLetter,
+  toNumber,
+  toPropertyType,
+  toStr,
+} from "./mapping";
 
-/**
- * Bien'ici parser — TRIES known embedded-JSON patterns and THROWS a clear
- * "structure inconnue" error when not found.
- *
- * Bien'ici embeds its ad payload in a JSON script tag. The shape below is
- * plausible but UNVERIFIED — real pages could not be fetched (DataDome). It
- * will be refined with real fixtures captured via the owner's browser. The
- * generic LLM fallback is the production value of this release.
- */
-const UNKNOWN = "bienici: structure inconnue (fixtures réelles à capturer)";
+const UNKNOWN = "bienici: structure inconnue";
 
-interface BieniciAd {
-  title?: unknown;
-  propertyType?: unknown;
+interface LdProductOffer {
   price?: unknown;
-  surfaceArea?: unknown;
-  roomsQuantity?: unknown;
-  city?: unknown;
-  postalCode?: unknown;
-  district?: unknown;
-  energyClassification?: unknown;
-  greenhouseGazClassification?: unknown;
-  description?: unknown;
-  publicationDate?: unknown;
-  photos?: unknown;
+  priceSpecification?: { price?: unknown };
 }
 
-function readAd(doc: Document): BieniciAd | null {
-  // Bien'ici embeds JSON in a script tag; try the data-testid hooks first,
-  // then any application/json script that parses to an object with a price.
-  const scripts = [
-    ...doc.querySelectorAll<HTMLScriptElement>('script[data-testid*="ad"]'),
-    ...doc.querySelectorAll<HTMLScriptElement>('script[type="application/json"]'),
-  ];
+interface LdProduct {
+  "@type"?: unknown;
+  name?: unknown;
+  image?: unknown;
+  offers?: LdProductOffer | LdProductOffer[];
+}
+
+interface LdAccommodation {
+  "@type"?: unknown;
+  numberOfRooms?: unknown;
+  floorSize?: { value?: unknown };
+  address?: { addressLocality?: unknown; postalCode?: unknown };
+}
+
+function readLdJson(doc: Document): { product?: LdProduct; accommodation?: LdAccommodation } {
+  const scripts = doc.querySelectorAll<HTMLScriptElement>('script[type="application/ld+json"]');
+  let product: LdProduct | undefined;
+  let accommodation: LdAccommodation | undefined;
   for (const script of scripts) {
     if (!script.textContent) continue;
+    let parsed: unknown;
     try {
-      const data = JSON.parse(script.textContent) as unknown;
-      if (data && typeof data === "object") return data as BieniciAd;
+      parsed = JSON.parse(script.textContent);
     } catch {
-      // try next script
+      continue;
+    }
+    const nodes = Array.isArray(parsed) ? parsed : [parsed];
+    for (const node of nodes) {
+      if (!node || typeof node !== "object") continue;
+      const type = (node as { "@type"?: unknown })["@type"];
+      if (type === "Product" && !product) product = node as LdProduct;
+      else if (type === "Accommodation" && !accommodation) accommodation = node as LdAccommodation;
     }
   }
-  return null;
+  return { product, accommodation };
 }
 
-function readDistrict(value: unknown): string | undefined {
-  if (typeof value === "string") return toStr(value);
-  if (value && typeof value === "object") return toStr((value as { name?: unknown }).name);
+function readOfferPrice(offers: LdProduct["offers"]): number | undefined {
+  const list: LdProductOffer[] = Array.isArray(offers) ? offers : offers ? [offers] : [];
+  for (const offer of list) {
+    const direct = toNumber(offer.price);
+    if (direct && direct > 0) return direct;
+    const spec = toNumber(offer.priceSpecification?.price);
+    if (spec && spec > 0) return spec;
+  }
   return undefined;
 }
 
-function readPhotos(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((p) => (typeof p === "string" ? p : toStr((p as { url?: unknown })?.url)))
-    .filter((p): p is string => typeof p === "string");
+function readDpeLetter(doc: Document, kind: "dpe" | "ges"): string | undefined {
+  const node = doc.querySelector(`.${kind}-line.active .${kind}-line__classification`);
+  return toLetter(node?.textContent);
+}
+
+/** Bloc texte du diagnostic énergie (porte parfois la valeur kWh / kg CO₂). */
+function readEnergyText(doc: Document, kind: "dpe" | "ges"): string | undefined {
+  const node = doc.querySelector(`.${kind}-line.active`) ?? doc.querySelector(`.${kind}-bloc`);
+  return node?.textContent ?? undefined;
+}
+
+function readPropertyType(url: string, fallback?: string): PropertyType | undefined {
+  if (/\/maison\//i.test(url)) return "Maison";
+  if (/\/appartement\//i.test(url)) return "Appartement";
+  return toPropertyType(fallback);
+}
+
+function readPhotos(doc: Document, primary?: string): string[] {
+  const seen = new Set<string>();
+  if (primary) seen.add(primary);
+  for (const img of doc.querySelectorAll<HTMLImageElement>('img[src*="file.bienici"]')) {
+    const src = img.getAttribute("src");
+    if (src) seen.add(src);
+  }
+  return [...seen];
 }
 
 export function parseBienici(doc: Document, url: string): Listing {
-  const ad = readAd(doc);
-  if (!ad) throw new Error(UNKNOWN);
+  const { product, accommodation } = readLdJson(doc);
+  if (!product) throw new Error(UNKNOWN);
 
-  const price = toNumber(ad.price);
-  if (price === undefined || price <= 0) throw new Error(UNKNOWN);
+  const price = readOfferPrice(product.offers);
+  if (!price) throw new Error(UNKNOWN);
 
-  const city = toStr(ad.city);
-  const postalCode = toStr(ad.postalCode);
-  const district = readDistrict(ad.district);
+  const title = toStr(product.name) ?? "";
+  const image = toStr(product.image);
+
+  const surface = toNumber(accommodation?.floorSize?.value);
+  const rooms = toNumber(accommodation?.numberOfRooms);
+  const city = toStr(accommodation?.address?.addressLocality);
+  const postalCode = toStr(accommodation?.address?.postalCode);
+
+  // Valeurs numériques DPE/GES depuis le bloc diagnostic, sinon le titre.
+  const dpeText = `${readEnergyText(doc, "dpe") ?? ""} ${title}`;
+  const gesText = `${readEnergyText(doc, "ges") ?? ""} ${title}`;
+  const dpeKwhM2 = extractKwhM2(dpeText);
+  const gesKgCO2M2 = extractGesKgM2(gesText);
+  const dpeDate = extractDpeDate(`${dpeText} ${title}`);
 
   return {
     url,
     site: "bienici",
-    title: toStr(ad.title) ?? "",
+    title,
     price,
-    surface: toNumber(ad.surfaceArea),
-    rooms: toNumber(ad.roomsQuantity),
-    propertyType: toPropertyType(ad.propertyType),
-    location: { rawAddress: buildRawAddress(city, postalCode, district), city, postalCode, district },
-    dpe: toLetter(ad.energyClassification),
-    ges: toLetter(ad.greenhouseGazClassification),
-    description: toStr(ad.description) ?? "",
-    photos: readPhotos(ad.photos),
-    publishedAt: toStr(ad.publicationDate),
+    surface,
+    rooms,
+    propertyType: readPropertyType(url, title),
+    location: {
+      rawAddress: buildRawAddress(city, postalCode, undefined),
+      city,
+      postalCode,
+    },
+    dpe: readDpeLetter(doc, "dpe"),
+    ges: readDpeLetter(doc, "ges"),
+    dpeKwhM2,
+    gesKgCO2M2,
+    dpeDate,
+    description: "",
+    photos: readPhotos(doc, image),
     extractedAt: new Date().toISOString(),
   };
 }

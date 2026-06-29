@@ -1,4 +1,5 @@
 import type { Listing, PropertyType } from "../types";
+import { extractDpeDate, extractGesKgM2, extractKwhM2, toNumber } from "./mapping";
 
 export function isLeboncoinListingPage(url: string): boolean {
   return /leboncoin\.fr\/ad\/(ventes_immobilieres|immobilier)\/\d+/.test(url);
@@ -75,6 +76,18 @@ export function parseLeboncoin(doc: Document, url: string): Listing {
   const dpe = attr(attributes, "energy_rate")?.toUpperCase();
   const ges = attr(attributes, "ges")?.toUpperCase();
 
+  // Valeurs numériques DPE/GES : clés structurées connues, sinon regex sur le
+  // texte des attributs + la description (best-effort, undefined si absent).
+  const energyBlob = [
+    ...attributes.map((a) => a.value_label ?? a.value),
+    String(ad.body ?? ""),
+  ].join(" ");
+  const dpeKwhM2 =
+    toNumber(attr(attributes, "energy_consumption")) ?? extractKwhM2(energyBlob);
+  const gesKgCO2M2 =
+    toNumber(attr(attributes, "gas_emission")) ?? extractGesKgM2(energyBlob);
+  const dpeDate = extractDpeDate(energyBlob);
+
   const builtAttributes = buildAttributes(attributes);
 
   return {
@@ -98,6 +111,9 @@ export function parseLeboncoin(doc: Document, url: string): Listing {
     },
     dpe: dpe && /^[A-G]$/.test(dpe) ? dpe : undefined,
     ges: ges && /^[A-G]$/.test(ges) ? ges : undefined,
+    dpeKwhM2,
+    gesKgCO2M2,
+    dpeDate,
     description: String(ad.body ?? ""),
     photos: images.urls ?? [],
     publishedAt: ad.first_publication_date ? String(ad.first_publication_date) : undefined,

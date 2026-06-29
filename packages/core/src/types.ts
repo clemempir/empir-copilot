@@ -25,6 +25,12 @@ export interface Listing {
   location: ListingLocation;
   dpe?: string;
   ges?: string;
+  /** Consommation énergie primaire annoncée (kWh/m²/an) si exposée par l'annonce. */
+  dpeKwhM2?: number;
+  /** Émissions GES annoncées (kg CO₂/m²/an) si exposées par l'annonce. */
+  gesKgCO2M2?: number;
+  /** Date d'établissement du DPE (ISO `yyyy-mm-dd`) si affichée. */
+  dpeDate?: string;
   description: string;
   photos: string[];
   publishedAt?: string;

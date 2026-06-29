@@ -1,13 +1,12 @@
 /**
  * Wrapper sur la base DPE ADEME publique (Data Fair API).
  *
- * Endpoint : https://data.ademe.fr/data-fair/api/v1/datasets/dpe-v2-logements-existants/lines
+ * Endpoint : https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant/lines
  * - Aucune clé requise
- * - Filtres via `qs` (Lucene syntax) : ex. `code_postal_ban:"75003"`
+ * - Filtres via `<champ>_eq=valeur` (le `qs=` Lucene exige une permission
+ *   non accordée au public)
  * - `size` max 10000 par page
- *
- * Le dataset v2 (depuis 2021) expose les valeurs numériques utiles à la
- * résolution d'adresse : consommation en kWh/m²/an et émissions en kg CO₂/m²/an.
+ * - Coordonnées dans `_geopoint` au format `"lat,lon"`
  */
 
 export interface AdemeCertificate {
@@ -38,6 +37,12 @@ export interface AdemeCertificate {
   yearBuilt?: number;
   /** Date du DPE (`date_etablissement_dpe`). */
   dpeDate?: string;
+  /**
+   * Surface du terrain en m². L'ADEME ne l'expose pas : ce champ est renseigné
+   * a posteriori à partir de la contenance de la parcelle cadastrale (cf.
+   * résolveur, passe 2 maisons).
+   */
+  landSurface?: number;
 }
 
 export interface FetchAdemeOptions {
@@ -52,19 +57,15 @@ export interface FetchAdemeOptions {
 }
 
 const ADEME_BASE =
-  "https://data.ademe.fr/data-fair/api/v1/datasets/dpe-v2-logements-existants/lines";
+  "https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant/lines";
 
 interface AdemeRow {
-  N_DPE?: string;
   numero_dpe?: string;
   adresse_ban?: string;
   code_postal_ban?: string;
-  nom__commune_ban?: string;
   nom_commune_ban?: string;
-  ban_x?: number;
-  ban_y?: number;
-  latitude?: number;
-  longitude?: number;
+  /** Coordonnées BAN au format `"lat,lon"`. */
+  _geopoint?: string;
   surface_habitable_logement?: number;
   type_batiment?: string;
   etiquette_dpe?: string;
@@ -73,6 +74,13 @@ interface AdemeRow {
   etiquette_ges?: string;
   annee_construction?: number;
   date_etablissement_dpe?: string;
+}
+
+function parseGeopoint(value: string | undefined): { lat?: number; lon?: number } {
+  if (!value) return {};
+  const [lat, lon] = value.split(",", 2).map(Number);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return {};
+  return { lat, lon };
 }
 
 const VALID_LETTERS = new Set(["A", "B", "C", "D", "E", "F", "G"]);
@@ -85,17 +93,18 @@ function asLetter(v: unknown): AdemeCertificate["dpeClass"] {
 }
 
 function normalize(row: AdemeRow): AdemeCertificate | null {
-  const certId = row.numero_dpe ?? row.N_DPE;
+  const certId = row.numero_dpe;
   const surface = row.surface_habitable_logement;
   const postalCode = row.code_postal_ban;
   if (!certId || surface == null || !postalCode) return null;
+  const { lat, lon } = parseGeopoint(row._geopoint);
   return {
     certId,
     address: row.adresse_ban ?? "",
     postalCode,
-    city: row.nom_commune_ban ?? row.nom__commune_ban ?? "",
-    lat: row.latitude ?? row.ban_y,
-    lon: row.longitude ?? row.ban_x,
+    city: row.nom_commune_ban ?? "",
+    lat,
+    lon,
     surface,
     buildingType: row.type_batiment?.toLowerCase(),
     dpeClass: asLetter(row.etiquette_dpe),
@@ -120,14 +129,12 @@ export async function fetchAdemeCertificates(
   const fetchFn = opts.fetchFn ?? fetch;
   const limit = Math.min(opts.limit ?? 1000, 10_000);
 
-  const qs: string[] = [`code_postal_ban:"${opts.postalCode}"`];
-  if (opts.buildingType) {
-    qs.push(`type_batiment:"${opts.buildingType.toLowerCase()}"`);
-  }
-
   const url = new URL(ADEME_BASE);
   url.searchParams.set("size", String(limit));
-  url.searchParams.set("qs", qs.join(" AND "));
+  url.searchParams.set("code_postal_ban_eq", opts.postalCode);
+  if (opts.buildingType) {
+    url.searchParams.set("type_batiment_eq", opts.buildingType.toLowerCase());
+  }
   url.searchParams.set(
     "select",
     [
@@ -135,8 +142,7 @@ export async function fetchAdemeCertificates(
       "adresse_ban",
       "code_postal_ban",
       "nom_commune_ban",
-      "ban_x",
-      "ban_y",
+      "_geopoint",
       "surface_habitable_logement",
       "type_batiment",
       "etiquette_dpe",

@@ -70,7 +70,10 @@ La presente annonce immobiliere vise 2 lots situés dans une copropriété de 10
 Bien non soumis au DPE. Les informations sur les risques auxquels ce bien est exposé, y compris l'obligation légale de débroussaillement, sont disponibles sur le site Géorisques : 
 La présente annonce immobilière a été rédigée sous la responsabilité éditoriale de Mme Asma Moullan mandataire indépendant en immobilier (sans détention de fonds), agent commercial de la SAS I@D France immatriculé au RSAC de Saint Denis la réunion sous le numéro 909504300, titulaire de la carte de démarchage immobilier pour le compte de la société I@D France SAS.",
   "dpe": undefined,
+  "dpeDate": undefined,
+  "dpeKwhM2": undefined,
   "ges": undefined,
+  "gesKgCO2M2": undefined,
   "location": {
     "city": "Saint-Denis",
     "postalCode": "97400",

@@ -2,29 +2,40 @@ import type { AdemeCertificate } from "./ademe";
 import type { MatchBreakdownItem, ResolverInput } from "./types";
 
 /**
- * Pondérations (somme 100) de chaque critère pour calculer la confiance qu'un
- * certificat ADEME corresponde au bien décrit dans l'annonce. La surface est
- * le critère le plus discriminant ; le DPE numérique vient ensuite (la lettre
- * seule étant fortement bruitée par les arrondis et les algorithmes 3CL).
+ * Pondérations (somme ≈ 100 sur le chemin "tout numérique") de chaque critère
+ * pour calculer la confiance qu'un certificat ADEME corresponde au bien décrit
+ * dans l'annonce. La surface reste le critère le plus discriminant ; le DPE et le
+ * GES numériques priment sur leurs lettres (fortement bruitées par les arrondis
+ * et l'algo 3CL), mais retombent sur la lettre quand le chiffre manque.
+ *
+ * ⚠️ Réplique manuelle dans `supabase/functions/resolve-address/index.ts` —
+ * propager tout changement (cf. commentaire de ce fichier).
  */
 const WEIGHTS = {
-  surface: 30,
-  dpeKwhM2: 25,
-  rooms: 0, // ADEME v2 n'expose pas le nb de pièces — désactivé
-  yearBuilt: 15,
-  gesKgCO2M2: 15,
-  dpeClass: 10,
+  surface: 28,
+  dpeKwhM2: 22,
+  dpeClass: 8, // fallback DPE lettre (exclusif avec dpeKwhM2)
+  gesKgCO2M2: 12,
+  gesClass: 7, // fallback GES lettre (exclusif avec gesKgCO2M2)
+  yearBuilt: 11,
+  landSurface: 7, // maisons uniquement (contenance cadastrale)
+  dpeDate: 5,
   buildingType: 5,
+  rooms: 0, // ADEME v2 n'expose pas le nb de pièces — désactivé
 } as const;
 
-/** Surfaces : ±5% considéré comme matchant (arrondis de saisie). */
+/** Surfaces habitables : ±5% considéré comme matchant (arrondis de saisie). */
 const SURFACE_TOLERANCE_PCT = 5;
 /** DPE numérique : ±10% (variation 3CL fréquente). */
 const DPE_TOLERANCE_PCT = 10;
 /** GES numérique : ±15% (plus volatile). */
 const GES_TOLERANCE_PCT = 15;
+/** Surface du terrain : ±10% (contenance cadastrale vs surface annoncée). */
+const LAND_SURFACE_TOLERANCE_PCT = 10;
 /** Année de construction : ±3 ans (typo, période). */
 const YEAR_TOLERANCE = 3;
+/** Date du DPE : ±60 jours (tie-break). */
+const DPE_DATE_TOLERANCE_DAYS = 60;
 
 function within(value: number, target: number, tolerancePct: number): boolean {
   const tol = (Math.abs(target) * tolerancePct) / 100;
@@ -46,7 +57,7 @@ export function scoreCertificate(
   let scored = 0;
   let totalWeight = 0;
 
-  // Surface
+  // Surface habitable
   if (input.surface != null) {
     totalWeight += WEIGHTS.surface;
     const matched = within(cert.surface, input.surface, SURFACE_TOLERANCE_PCT);
@@ -60,7 +71,7 @@ export function scoreCertificate(
     });
   }
 
-  // DPE numérique (préféré à la lettre)
+  // DPE — numérique préféré, fallback lettre (exclusif).
   if (input.dpeKwhM2 != null && cert.dpeKwhM2 != null) {
     totalWeight += WEIGHTS.dpeKwhM2;
     const matched = within(cert.dpeKwhM2, input.dpeKwhM2, DPE_TOLERANCE_PCT);
@@ -73,7 +84,6 @@ export function scoreCertificate(
       actual: cert.dpeKwhM2,
     });
   } else if (input.dpeClass && cert.dpeClass) {
-    // Fallback sur la lettre (DPE annoncé non numérique).
     totalWeight += WEIGHTS.dpeClass;
     const matched = input.dpeClass === cert.dpeClass;
     if (matched) scored += WEIGHTS.dpeClass;
@@ -86,7 +96,7 @@ export function scoreCertificate(
     });
   }
 
-  // GES numérique
+  // GES — numérique préféré, fallback lettre (exclusif, même mécanique que le DPE).
   if (input.gesKgCO2M2 != null && cert.gesKgCO2M2 != null) {
     totalWeight += WEIGHTS.gesKgCO2M2;
     const matched = within(cert.gesKgCO2M2, input.gesKgCO2M2, GES_TOLERANCE_PCT);
@@ -97,6 +107,17 @@ export function scoreCertificate(
       matched,
       expected: input.gesKgCO2M2,
       actual: cert.gesKgCO2M2,
+    });
+  } else if (input.gesClass && cert.gesClass) {
+    totalWeight += WEIGHTS.gesClass;
+    const matched = input.gesClass === cert.gesClass;
+    if (matched) scored += WEIGHTS.gesClass;
+    breakdown.push({
+      criterion: "gesClass",
+      weight: WEIGHTS.gesClass,
+      matched,
+      expected: input.gesClass,
+      actual: cert.gesClass,
     });
   }
 
@@ -112,6 +133,43 @@ export function scoreCertificate(
       expected: input.yearBuilt,
       actual: cert.yearBuilt,
     });
+  }
+
+  // Surface du terrain — discriminant pour les maisons uniquement, et seulement
+  // si la contenance cadastrale a été résolue (cf. passe 2 du résolveur).
+  if (
+    input.landSurface != null &&
+    cert.landSurface != null &&
+    input.propertyType === "Maison"
+  ) {
+    totalWeight += WEIGHTS.landSurface;
+    const matched = within(cert.landSurface, input.landSurface, LAND_SURFACE_TOLERANCE_PCT);
+    if (matched) scored += WEIGHTS.landSurface;
+    breakdown.push({
+      criterion: "landSurface",
+      weight: WEIGHTS.landSurface,
+      matched,
+      expected: input.landSurface,
+      actual: cert.landSurface,
+    });
+  }
+
+  // Date du DPE — tie-break léger (ne compte que si les deux dates sont parsables).
+  if (input.dpeDate && cert.dpeDate) {
+    const ta = Date.parse(input.dpeDate);
+    const tb = Date.parse(cert.dpeDate);
+    if (Number.isFinite(ta) && Number.isFinite(tb)) {
+      totalWeight += WEIGHTS.dpeDate;
+      const matched = Math.abs(ta - tb) <= DPE_DATE_TOLERANCE_DAYS * 86_400_000;
+      if (matched) scored += WEIGHTS.dpeDate;
+      breakdown.push({
+        criterion: "dpeDate",
+        weight: WEIGHTS.dpeDate,
+        matched,
+        expected: input.dpeDate,
+        actual: cert.dpeDate,
+      });
+    }
   }
 
   // Type de bâtiment
