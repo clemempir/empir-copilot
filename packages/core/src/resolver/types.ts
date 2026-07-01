@@ -91,7 +91,8 @@ export type ResolveFlag =
   | "dpe-confirmed" // le DPE corrobore la position
   | "dpe-absent" // aucun DPE au point — adresse probable mais non vérifiée
   | "conflict" // le DPE au point contredit l'annonce
-  | "low-margin"; // écart insuffisant entre les 2 meilleures adresses
+  | "low-margin" // écart insuffisant entre les 2 meilleures adresses
+  | "lot-in-building"; // pas de DPE de lot ; DPE d'immeuble concordant à proximité
 
 /**
  * Statut de résolution (remplace le booléen `resolved`).

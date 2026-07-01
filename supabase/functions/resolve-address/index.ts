@@ -50,7 +50,8 @@ type ResolveFlag =
   | "dpe-confirmed"
   | "dpe-absent"
   | "conflict"
-  | "low-margin";
+  | "low-margin"
+  | "lot-in-building";
 
 type ResolveStatus = "confirmed" | "probable" | "unresolved";
 
@@ -179,7 +180,7 @@ function buildCacheKey(input: ResolverInput): string {
     : "_";
   return [
     // Version d'algo : bumper à chaque changement de logique pour invalider le cache.
-    "v4-combos",
+    "v5-lots",
     input.postalCode,
     bucket(input.surface, 2),
     bucket(input.dpeKwhM2, 20),
@@ -541,6 +542,7 @@ const MARKER_DEMOTE_M = 200;
 const GEO_DECIDE_M = 25;
 const GEO_ISOLATED_M = 100;
 const DISK_DEFAULT_R = 300;
+const LOT_BUILDING_RADIUS = 80;
 const MARGIN_CONFIRM = 1.5;
 const MARGIN_PROBABLE = 1.2;
 const ACC_K = 3;
@@ -581,7 +583,13 @@ async function resolveAddress(
     return s;
   });
   const addresses = groupByAddress(scored);
-  const ranked = decide(input, addresses, dist, precise, 5);
+  let ranked = decide(input, addresses, dist, precise, 5);
+
+  // Repli « lot dans immeuble » (cf. index.ts §5bis)
+  if (ranked[0]?.status === "unresolved") {
+    const lots = lotInBuildingCandidates(input, certs, dist, 5);
+    if (lots.length) ranked = mergeLotCandidates(lots, ranked, 5);
+  }
 
   // Cadastre top-1
   if (ranked[0] && ranked[0].lat && ranked[0].lon) {
@@ -668,6 +676,130 @@ function coherence(input: ResolverInput, cert: AdemeCert): Coherence {
 
 function clamp01(x: number): number {
   return Math.max(0, Math.min(1, x));
+}
+
+// ── Repli « lot dans immeuble » (cf. index.ts) ─────────────────────────────
+
+function dpeMatch(input: ResolverInput, cert: AdemeCert): { ok: boolean; exact: boolean } {
+  if (input.dpeKwhM2 != null && cert.dpeKwhM2 != null) {
+    return { ok: within(cert.dpeKwhM2, input.dpeKwhM2, COH_CONSO_TOL), exact: true };
+  }
+  if (input.dpeClass && cert.dpeClass) {
+    return { ok: cert.dpeClass === input.dpeClass, exact: false };
+  }
+  return { ok: false, exact: false };
+}
+
+interface LotCand {
+  cert: AdemeCert;
+  d: number;
+  exact: boolean;
+  aptMatch: boolean;
+  lotFit: number;
+}
+
+function rankLot(c: LotCand): number {
+  return (c.aptMatch ? 2 : 0) + (c.exact ? 1 : 0);
+}
+
+function lotFitsBuilding(input: ResolverInput, cert: AdemeCert): boolean {
+  if (input.surface == null) return true;
+  if (input.surface > cert.surface) return false;
+  if (cert.apartmentCount != null && cert.apartmentCount >= 3 && input.surface > cert.surface / 2) {
+    return false;
+  }
+  return true;
+}
+
+function lotInBuildingCandidates(
+  input: ResolverInput,
+  certs: AdemeCert[],
+  dist: Map<AdemeCert, number>,
+  limit: number,
+): ResolvedAddress[] {
+  if (!input.geo) return [];
+  if (input.propertyType !== "Appartement" && input.propertyType !== "Immeuble") return [];
+
+  const cands: LotCand[] = [];
+  for (const c of certs) {
+    if (c.buildingType !== "immeuble") continue;
+    const d = dist.get(c);
+    if (d == null || d > LOT_BUILDING_RADIUS) continue;
+    const m = dpeMatch(input, c);
+    if (!m.ok) continue;
+    if (!lotFitsBuilding(input, c)) continue;
+    const avgLot = c.apartmentCount ? c.surface / c.apartmentCount : null;
+    cands.push({
+      cert: c,
+      d,
+      exact: m.exact,
+      aptMatch: input.apartmentCount != null && c.apartmentCount === input.apartmentCount,
+      lotFit: avgLot != null && input.surface != null ? Math.abs(input.surface - avgLot) : Infinity,
+    });
+  }
+  if (!cands.length) return [];
+
+  const better = (a: LotCand, b: LotCand) =>
+    rankLot(a) - rankLot(b) || b.lotFit - a.lotFit || b.d - a.d;
+  const best = new Map<string, LotCand>();
+  for (const cand of cands) {
+    const key = addressKey(cand.cert);
+    const cur = best.get(key);
+    if (!cur || better(cand, cur) > 0) best.set(key, cand);
+  }
+  const ordered = [...best.values()].sort(
+    (a, b) => rankLot(b) - rankLot(a) || a.lotFit - b.lotFit || a.d - b.d,
+  );
+
+  return ordered.slice(0, limit).map((cand) => {
+    const c = cand.cert;
+    const conf = Math.max(
+      40,
+      Math.min(70, 55 + (cand.exact ? 12 : 0) + (cand.aptMatch ? 10 : 0) - Math.min(10, Math.round(cand.d / 10))),
+    );
+    const breakdown: MatchBreakdownItem[] = [
+      {
+        criterion: "immeuble-dpe",
+        matched: true,
+        similarity: 1,
+        factors: [
+          {
+            criterion: input.dpeKwhM2 != null ? "dpeKwhM2" : "dpeClass",
+            similarity: 1,
+            expected: input.dpeKwhM2 ?? input.dpeClass,
+            actual: c.dpeKwhM2 ?? c.dpeClass,
+          },
+        ],
+      },
+      { criterion: "_geo", matched: cand.d <= LOT_BUILDING_RADIUS, distanceM: Math.round(cand.d) },
+    ];
+    return {
+      address: c.address,
+      lat: c.lat ?? 0,
+      lon: c.lon ?? 0,
+      ademeCertId: c.certId,
+      confidence: conf,
+      status: "probable",
+      resolved: false,
+      distanceM: Math.round(cand.d),
+      flags: ["lot-in-building"],
+      matchBreakdown: breakdown,
+      verifiedDpe:
+        c.dpeClass && c.dpeKwhM2 != null && c.gesKgCO2M2 != null
+          ? { class: c.dpeClass, kwhM2: c.dpeKwhM2, gesKgCO2M2: c.gesKgCO2M2 }
+          : undefined,
+    };
+  });
+}
+
+function mergeLotCandidates(
+  lots: ResolvedAddress[],
+  ranked: ResolvedAddress[],
+  limit: number,
+): ResolvedAddress[] {
+  const seen = new Set(lots.map((l) => l.address));
+  const rest = ranked.filter((r) => !seen.has(r.address));
+  return [...lots, ...rest].slice(0, limit);
 }
 
 interface Decision {

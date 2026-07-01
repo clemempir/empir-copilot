@@ -171,6 +171,54 @@ describe("resolveAddress — marqueur géo précis (gate)", () => {
   });
 });
 
+describe("resolveAddress — lot dans immeuble (DPE de lot absent)", () => {
+  it("appartement E sans DPE de lot → rattaché à l'immeuble E, plausibilité surface/lot", async () => {
+    const rows = [
+      // au point : maison C (mauvais type + DPE) → conflit, non résolu
+      row({ id: "M", address: "11bis Rue Dulaurier", geo: "43.89587,-0.50435", surface: 63, type: "maison", dpe: "C" }),
+      // immeuble E de 10 logements (550 m²) à ~65 m → lot 69 m² plausible
+      row({ id: "IMM550", address: "106 Av Rozanoff", geo: "43.89525,-0.50435", surfaceImm: 550, apts: 10, type: "immeuble", dpe: "E" }),
+      // immeuble E de 4 logements (128 m²) à ~64 m → lot 69 m² IMPOSSIBLE (> moitié)
+      row({ id: "IMM128", address: "68 Av Rozanoff", geo: "43.89526,-0.50440", surfaceImm: 128, apts: 4, type: "immeuble", dpe: "E" }),
+    ];
+    const res = await resolveAddress(
+      {
+        postalCode: "40000",
+        surface: 69,
+        dpeClass: "E",
+        propertyType: "Appartement",
+        geo: { lat: 43.89583, lon: -0.50435, precise: true },
+      },
+      { fetchFn: makeFetch(rows) },
+    );
+    expect(res[0]!.status).toBe("probable");
+    expect(res[0]!.flags).toContain("lot-in-building");
+    expect(res[0]!.address).toContain("106 Av Rozanoff");
+    // L'immeuble de 4 logements (trop petit pour un lot de 69 m²) est écarté.
+    expect(res.some((r) => r.ademeCertId === "IMM128" && r.flags?.includes("lot-in-building"))).toBe(false);
+  });
+
+  it("appartement sans immeuble concordant → reste unresolved (pas d'invention)", async () => {
+    const rows = [
+      row({ id: "M", address: "1 Rue X", geo: "43.89587,-0.50435", surface: 63, type: "maison", dpe: "C" }),
+      // immeuble proche mais DPE D (≠ E annonce) → pas rattaché
+      row({ id: "IMMD", address: "9 Av Y", geo: "43.89525,-0.50435", surfaceImm: 500, apts: 9, type: "immeuble", dpe: "D" }),
+    ];
+    const res = await resolveAddress(
+      {
+        postalCode: "40000",
+        surface: 69,
+        dpeClass: "E",
+        propertyType: "Appartement",
+        geo: { lat: 43.89583, lon: -0.50435, precise: true },
+      },
+      { fetchFn: makeFetch(rows) },
+    );
+    expect(res[0]!.status).toBe("unresolved");
+    expect(res.some((r) => r.flags?.includes("lot-in-building"))).toBe(false);
+  });
+});
+
 describe("resolveAddress — désambiguïsation par attributs (sans géo)", () => {
   it("Bien'ici immeuble 284 m² / 5 lots / E / 2023-10-25 → Pontix (type×surface×lots)", async () => {
     const rows = [

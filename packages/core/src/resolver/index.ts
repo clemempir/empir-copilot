@@ -2,7 +2,13 @@ import { fetchAdemeCertificates, type AdemeCertificate } from "./ademe";
 import { lookupParcel } from "./cadastre";
 import { distanceM, geoDiskCoef, isPreciseMarker } from "./geo";
 import { computeSelectivities, scoreCertificate, type ScoredCertificate } from "./scorer";
-import type { ResolveFlag, ResolvedAddress, ResolveStatus, ResolverInput } from "./types";
+import type {
+  MatchBreakdownItem,
+  ResolveFlag,
+  ResolvedAddress,
+  ResolveStatus,
+  ResolverInput,
+} from "./types";
 
 export type { ResolverInput, ResolvedAddress, MatchBreakdownItem } from "./types";
 
@@ -27,6 +33,8 @@ const GEO_DECIDE_M = 25;
 const GEO_ISOLATED_M = 100;
 /** Rayon par défaut d'un marqueur-disque sans rayon déclaré (m). */
 const DISK_DEFAULT_R = 300;
+/** Rayon « échelle parcelle » pour rattacher un lot à un DPE d'immeuble (m). */
+const LOT_BUILDING_RADIUS = 80;
 
 /** Marge top1/top2 pour un statut « confirmed ». */
 const MARGIN_CONFIRM = 1.5;
@@ -110,7 +118,16 @@ export async function resolveAddress(
   const addresses = groupByAddress(scored);
 
   // ── 5. Décision ──────────────────────────────────────────────────────────
-  const ranked = decide(input, addresses, dist, precise, limit);
+  let ranked = decide(input, addresses, dist, precise, limit);
+
+  // ── 5bis. Repli « lot dans immeuble » ────────────────────────────────────
+  // Un appartement dont le lot n'a pas de DPE propre : si la résolution échoue,
+  // on rattache le bien au DPE d'IMMEUBLE concordant le plus proche (le lot vit
+  // dans ce bâtiment). Statut « probable » — jamais confirmé (inférence).
+  if (ranked[0]?.status === "unresolved") {
+    const lots = lotInBuildingCandidates(input, certs, dist, limit);
+    if (lots.length) ranked = mergeLotCandidates(lots, ranked, limit);
+  }
 
   // ── 6. Cadastre top-1 ────────────────────────────────────────────────────
   if (withCadastre && ranked[0]) {
@@ -214,6 +231,148 @@ function coherence(input: ResolverInput, cert: AdemeCertificate): Coherence {
 
 function clamp01(x: number): number {
   return Math.max(0, Math.min(1, x));
+}
+
+// ── Repli « lot dans immeuble » ────────────────────────────────────────────
+
+/** Le DPE d'un immeuble concorde-t-il avec l'annonce ? (chiffre prioritaire sinon lettre). */
+function dpeMatch(input: ResolverInput, cert: AdemeCertificate): { ok: boolean; exact: boolean } {
+  if (input.dpeKwhM2 != null && cert.dpeKwhM2 != null) {
+    return { ok: within(cert.dpeKwhM2, input.dpeKwhM2, COH_CONSO_TOL), exact: true };
+  }
+  if (input.dpeClass && cert.dpeClass) {
+    return { ok: cert.dpeClass === input.dpeClass, exact: false };
+  }
+  return { ok: false, exact: false };
+}
+
+interface LotCand {
+  cert: AdemeCertificate;
+  d: number;
+  exact: boolean;
+  aptMatch: boolean;
+  /** Écart |surface lot annoncée − surface moyenne d'un lot de l'immeuble| (m²). */
+  lotFit: number;
+}
+
+/** Rang d'un candidat lot : nb de logements concordant > DPE chiffré exact > lettre. */
+function rankLot(c: LotCand): number {
+  return (c.aptMatch ? 2 : 0) + (c.exact ? 1 : 0);
+}
+
+/**
+ * Le lot annoncé peut-il physiquement tenir dans cet immeuble ? Un immeuble à
+ * ≥ 3 logements ne peut pas avoir un lot dépassant la moitié de sa surface
+ * habitable totale (sinon ce ne sont pas des logements comparables).
+ */
+function lotFitsBuilding(input: ResolverInput, cert: AdemeCertificate): boolean {
+  if (input.surface == null) return true;
+  if (input.surface > cert.surface) return false; // lot plus grand que le bâtiment
+  if (cert.apartmentCount != null && cert.apartmentCount >= 3 && input.surface > cert.surface / 2) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Repli « lot dans immeuble » : pour un appartement/immeuble avec marqueur, si
+ * aucun DPE de lot ne résout, on remonte les DPE d'IMMEUBLE concordants (même
+ * classe/conso) à l'échelle parcelle (~80 m). La surface (lot vs bâtiment) est
+ * ignorée — un lot de 69 m² vit dans un immeuble de 550 m². Départage : nb de
+ * logements concordant > DPE chiffré exact > proximité.
+ */
+function lotInBuildingCandidates(
+  input: ResolverInput,
+  certs: AdemeCertificate[],
+  dist: Map<AdemeCertificate, number>,
+  limit: number,
+): ResolvedAddress[] {
+  if (!input.geo) return [];
+  if (input.propertyType !== "Appartement" && input.propertyType !== "Immeuble") return [];
+
+  const cands: LotCand[] = [];
+  for (const c of certs) {
+    if (c.buildingType !== "immeuble") continue;
+    const d = dist.get(c);
+    if (d == null || d > LOT_BUILDING_RADIUS) continue;
+    const m = dpeMatch(input, c);
+    if (!m.ok) continue;
+    if (!lotFitsBuilding(input, c)) continue; // lot trop grand pour ce bâtiment
+    const avgLot = c.apartmentCount ? c.surface / c.apartmentCount : null;
+    cands.push({
+      cert: c,
+      d,
+      exact: m.exact,
+      aptMatch: input.apartmentCount != null && c.apartmentCount === input.apartmentCount,
+      lotFit: avgLot != null && input.surface != null ? Math.abs(input.surface - avgLot) : Infinity,
+    });
+  }
+  if (!cands.length) return [];
+
+  // Dédup par adresse (meilleur candidat de chaque immeuble).
+  const better = (a: LotCand, b: LotCand) =>
+    rankLot(a) - rankLot(b) || b.lotFit - a.lotFit || b.d - a.d; // > 0 ⇒ a meilleur
+  const best = new Map<string, LotCand>();
+  for (const cand of cands) {
+    const key = addressKey(cand.cert);
+    const cur = best.get(key);
+    if (!cur || better(cand, cur) > 0) best.set(key, cand);
+  }
+  // Tri final : nb logements > DPE exact > cohérence surface/lot > proximité.
+  const ordered = [...best.values()].sort(
+    (a, b) => rankLot(b) - rankLot(a) || a.lotFit - b.lotFit || a.d - b.d,
+  );
+
+  return ordered.slice(0, limit).map((cand) => {
+    const c = cand.cert;
+    const conf = Math.max(
+      40,
+      Math.min(70, 55 + (cand.exact ? 12 : 0) + (cand.aptMatch ? 10 : 0) - Math.min(10, Math.round(cand.d / 10))),
+    );
+    const breakdown: MatchBreakdownItem[] = [
+      {
+        criterion: "immeuble-dpe",
+        matched: true,
+        similarity: 1,
+        factors: [
+          {
+            criterion: input.dpeKwhM2 != null ? "dpeKwhM2" : "dpeClass",
+            similarity: 1,
+            expected: input.dpeKwhM2 ?? input.dpeClass,
+            actual: c.dpeKwhM2 ?? c.dpeClass,
+          },
+        ],
+      },
+      { criterion: "_geo", matched: cand.d <= LOT_BUILDING_RADIUS, distanceM: Math.round(cand.d) },
+    ];
+    return {
+      address: c.address,
+      lat: c.lat ?? 0,
+      lon: c.lon ?? 0,
+      ademeCertId: c.certId,
+      confidence: conf,
+      status: "probable",
+      resolved: false,
+      distanceM: Math.round(cand.d),
+      flags: ["lot-in-building"],
+      matchBreakdown: breakdown,
+      verifiedDpe:
+        c.dpeClass && c.dpeKwhM2 != null && c.gesKgCO2M2 != null
+          ? { class: c.dpeClass, kwhM2: c.dpeKwhM2, gesKgCO2M2: c.gesKgCO2M2 }
+          : undefined,
+    };
+  });
+}
+
+/** Place les candidats « lot-immeuble » (probable) devant les non-résolus. */
+function mergeLotCandidates(
+  lots: ResolvedAddress[],
+  ranked: ResolvedAddress[],
+  limit: number,
+): ResolvedAddress[] {
+  const seen = new Set(lots.map((l) => l.address));
+  const rest = ranked.filter((r) => !seen.has(r.address));
+  return [...lots, ...rest].slice(0, limit);
 }
 
 interface Decision {
