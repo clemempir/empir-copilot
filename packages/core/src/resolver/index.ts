@@ -200,8 +200,13 @@ type Coherence = "concordant" | "absent" | "conflict";
 /** Tolérances « cohérence » (≈ tolérance max des sim) pour les valeurs chiffrées. */
 const COH_CONSO_TOL = 0.25;
 const COH_GES_TOL = 0.35;
-/** Écart de surface au-delà duquel c'est un bien d'une AUTRE échelle (immeuble ≠ lot). */
-const SURFACE_CONFLICT_RATIO = 2;
+/**
+ * Écart de surface au-delà duquel ce n'est plus le même logement.
+ * 1,4× = 40 % d'écart : au-delà, la conso a beau coïncider, c'est un autre bien
+ * (ex. annonce 90 m² matchée à tort sur un certificat 63 m² via la seule conso).
+ * Couvre aussi l'échelle radicalement différente (immeuble entier ≠ lot).
+ */
+const SURFACE_CONFLICT_RATIO = 1.4;
 /** Écart de classe GES (en lettres) au-delà duquel c'est un bien différent (A vs C). */
 const GES_CONFLICT_STEPS = 2;
 

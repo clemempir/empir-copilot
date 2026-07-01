@@ -87,6 +87,14 @@ const CASES: Case[] = [
   },
   // ── NÉGATIFS : doivent RESTER unresolved (anti-faux-positif des canaux) ──────
   {
+    name: "NÉGATIF Argenté — appart 90 B/43 GES B/7, cert conso-proche fait 63 m² GES A (surface >1,4×), pas le même logement (SeLoger 271875149)",
+    input: {
+      postalCode: "40000", surface: 90, dpeClass: "B", dpeKwhM2: 43, gesClass: "B", gesKgCO2M2: 7,
+      propertyType: "Appartement", geo: { lat: 43.89838, lon: -0.50016, radiusM: 780 },
+    },
+    expect: { status: "unresolved" },
+  },
+  {
     name: "NÉGATIF Cahors 300 C/138 GES A — cert voisin est GES C (≠2 classes), pas le même bien (SeLoger 257979085)",
     input: {
       postalCode: "46000", surface: 300, dpeClass: "C", dpeKwhM2: 138, gesClass: "A", gesKgCO2M2: 1,

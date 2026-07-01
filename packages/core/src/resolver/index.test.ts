@@ -245,6 +245,18 @@ describe("resolveAddress — lot dans immeuble (DPE de lot absent)", () => {
     expect(res.some((r) => r.ademeCertId === "IMM128" && r.flags?.includes("lot-in-building"))).toBe(false);
   });
 
+  it("conso identique mais surface 90 vs 63 (>1,4×) → conflit (autre logement, pas de faux confirmed)", async () => {
+    const rows = [
+      row({ id: "PETIT", address: "1 Impasse Petit", geo: "43.898,-0.500", surface: 63, type: "appartement", dpe: "A", kwh: 42, gesClass: "A", ges: 1 }),
+      ...noise(6),
+    ];
+    const res = await resolveAddress(
+      { postalCode: "40000", surface: 90, dpeClass: "B", dpeKwhM2: 43, gesClass: "B", gesKgCO2M2: 7, propertyType: "Appartement", geo: { lat: 43.898, lon: -0.5, radiusM: 780 } },
+      { fetchFn: makeFetch(rows) },
+    );
+    expect(res[0]!.status).toBe("unresolved");
+  });
+
   it("même conso mais GES A vs C (2 classes) → conflit (électrique ≠ gaz, biens différents)", async () => {
     const rows = [
       row({ id: "GAZ", address: "105 Rue Gaz", geo: "44.45,1.43", surface: 271, type: "maison", dpe: "C", kwh: 141, gesClass: "C" }),

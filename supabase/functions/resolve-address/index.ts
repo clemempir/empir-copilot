@@ -181,7 +181,7 @@ function buildCacheKey(input: ResolverInput): string {
     : "_";
   return [
     // Version d'algo : bumper à chaque changement de logique pour invalider le cache.
-    "v11-verified-surface",
+    "v12-surface-140",
     input.postalCode,
     bucket(input.surface, 2),
     bucket(input.dpeKwhM2, 20),
@@ -646,7 +646,7 @@ type Coherence = "concordant" | "absent" | "conflict";
 
 const COH_CONSO_TOL = 0.25;
 const COH_GES_TOL = 0.35;
-const SURFACE_CONFLICT_RATIO = 2;
+const SURFACE_CONFLICT_RATIO = 1.4;
 const GES_CONFLICT_STEPS = 2;
 
 function letterSteps(a?: string, b?: string): number | null {

@@ -385,10 +385,10 @@ function CharRow({
   return (
     <div className="grid grid-cols-[1fr_4rem_4rem] items-center gap-x-2 border-b border-empir-line py-[10px] text-[12.5px] last:border-b-0">
       <span className="text-empir-muted-2">{label}</span>
-      <span className="text-right font-semibold tabular-nums text-empir-text">{shown}</span>
+      <span className="text-right tabular-nums text-empir-text">{shown}</span>
       <span
         className={cn(
-          "text-right font-semibold tabular-nums",
+          "text-right tabular-nums",
           mismatch ? "text-empir-warn" : real ? "text-empir-success" : "text-empir-muted-2",
         )}
       >
