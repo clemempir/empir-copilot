@@ -36,7 +36,7 @@ import type { MatchBreakdownItem, MatchFactor, ResolverInput } from "./types";
 /** Tolérances [serrée, max] en pourcentage pour les similarités numériques. */
 export const TOL = {
   surfacePct: [5, 15],
-  consoPct: [10, 25],
+  consoPct: [3, 12],
   gesPct: [15, 35],
   terrainPct: [10, 30],
   yearAbs: [3, 10],

@@ -180,7 +180,7 @@ function buildCacheKey(input: ResolverInput): string {
     : "_";
   return [
     // Version d'algo : bumper à chaque changement de logique pour invalider le cache.
-    "v5-lots",
+    "v6-conso-tol",
     input.postalCode,
     bucket(input.surface, 2),
     bucket(input.dpeKwhM2, 20),
@@ -245,7 +245,7 @@ interface Parcel {
 
 const TOL = {
   surfacePct: [5, 15],
-  consoPct: [10, 25],
+  consoPct: [3, 12],
   gesPct: [15, 35],
   terrainPct: [10, 30],
   yearAbs: [3, 10],

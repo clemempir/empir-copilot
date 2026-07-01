@@ -92,6 +92,21 @@ describe("scoreCertificate (croisements multiplicatifs)", () => {
     expect(spine.factors!.find((f) => f.criterion === "dpeDate")!.similarity).toBe(1);
   });
 
+  it("tolérance conso resserrée : une conso ~9 % off n'est plus « exacte »", () => {
+    // La conso EST la vraie valeur du DPE → tolérance serrée (±3 %). Un écart de
+    // ~9 % (296 vs 328) doit décroître nettement, pas valoir 1 comme avant.
+    const input: ResolverInput = { postalCode: "40500", dpeKwhM2: 328, propertyType: "Appartement" };
+    const exact = cert({ dpeKwhM2: 328, buildingType: "appartement" });
+    const off = cert({ dpeKwhM2: 296, buildingType: "appartement" });
+    const sels = computeSelectivities(input, [exact, off]);
+    const spineOf = (c: AdemeCertificate) =>
+      scoreCertificate(input, c, sels).breakdown
+        .find((b) => b.criterion === "épine")!
+        .factors!.find((f) => f.criterion === "dpeKwhM2")!.similarity;
+    expect(spineOf(exact)).toBe(1);
+    expect(spineOf(off)).toBeLessThan(0.5);
+  });
+
   it("DPE chiffré exclut la lettre (exclusivité)", () => {
     const c = cert({ dpeKwhM2: 285, dpeClass: "E", dpeDate: "2023-10-25" });
     const input: ResolverInput = { postalCode: "40500", dpeKwhM2: 285, dpeClass: "E", dpeDate: "2023-10-25" };
