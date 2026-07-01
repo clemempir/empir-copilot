@@ -5,6 +5,7 @@ import type { TabState } from "@/lib/messages";
 import { useAuth } from "@/lib/hooks/use-auth";
 import { useAnalyze } from "@/lib/hooks/use-analyze";
 import { useMarket } from "@/lib/hooks/use-market";
+import { useRisks } from "@/lib/hooks/use-risks";
 import { useSavedListings } from "@/lib/hooks/use-saved-listings";
 import { useNotifications } from "@/lib/hooks/use-notifications";
 import { useProfile } from "@/lib/hooks/use-profile";
@@ -122,6 +123,11 @@ export default function App() {
   // Prix du marché du quartier (ventes DVF réelles autour de l'adresse résolue),
   // puis score prix = position de l'annonce vs médiane comparable.
   const market = useMarket(tabState.listing, analyze.result?.resolvedAddress);
+  // Risques Géorisques (naturels + technologiques, avec gravité), côté client.
+  const risksState = useRisks(
+    analyze.result?.resolvedAddress?.lat ?? tabState.listing?.geo?.lat,
+    analyze.result?.resolvedAddress?.lon ?? tabState.listing?.geo?.lon,
+  );
   const quick: QuickAnalysis = useMemo(() => {
     if (!tabState.listing) {
       return { listingPricePerM2: null, marketGapPct: null, market: null, score: null, scoreLabel: "—" };
@@ -242,7 +248,7 @@ export default function App() {
           }}
           onAccountClick={() => setScreen("account")}
           hasUnread={notifs.items.some((n) => !n.read)}
-          risks={analyze.result?.enrichments?.risks ? mapRisks(analyze.result.enrichments.risks) : []}
+          risks={risksState.risks}
           urbanisme={analyze.result?.enrichments?.plu ? mapUrbanisme(analyze.result.enrichments.plu) : []}
           salesHistory={market.timeline?.nodes ?? []}
           salesSummary={market.timeline?.summary ?? null}
@@ -291,12 +297,6 @@ function timeAgo(iso: string): string {
 
 // V1 : adapters minimaux. La forme exacte des payloads Géorisques / PLU varie ;
 // ces fonctions seront durcies au branchement réel des Edge Functions.
-function mapRisks(raw: unknown): { label: string; level: "low" | "medium" | "high" | "info" }[] {
-  const arr = (raw as { risquesNaturels?: { libelle: string }[] } | null)?.risquesNaturels;
-  if (!Array.isArray(arr)) return [];
-  return arr.slice(0, 6).map((r) => ({ label: r.libelle, level: "info" as const }));
-}
-
 function mapUrbanisme(
   raw: unknown,
 ): { zone: string; subtitle?: string; description?: string; tone?: "default" | "warn" | "info" }[] {

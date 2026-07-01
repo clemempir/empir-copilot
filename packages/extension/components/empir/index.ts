@@ -16,6 +16,8 @@ export { DpeBars } from "./dpe-bars";
 export type { DpeBarsProps, DpeClass } from "./dpe-bars";
 export { RiskRow } from "./risk-row";
 export type { RiskRowProps, RiskLevel } from "./risk-row";
+export { RiskSummary } from "./risk-summary";
+export type { RiskSummaryProps, RiskSummaryItem } from "./risk-summary";
 export { UrbanismeCard } from "./urbanisme-card";
 export type { UrbanismeCardProps } from "./urbanisme-card";
 export { SalesTimeline } from "./sales-timeline";

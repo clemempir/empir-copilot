@@ -7,8 +7,8 @@ import {
   DataRow,
   DpeBars,
   type DpeClass,
-  RiskRow,
   type RiskLevel,
+  RiskSummary,
   SalesTimeline,
   ScoreGauge,
   SectionHeader,
@@ -330,14 +330,7 @@ export function ResultView({
         {risks.length > 0 && (
           <>
             <SectionHeader label="Risques" />
-            <div
-              className="rounded-empir-card border border-empir-line px-[14px]"
-              style={{ background: "rgba(28,34,50,0.5)" }}
-            >
-              {risks.map((r, i) => (
-                <RiskRow key={`${r.label}-${i}`} {...r} />
-              ))}
-            </div>
+            <RiskSummary risks={risks} />
           </>
         )}
 
