@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { fetchPluZone } from "./plu";
+import { fetchPluZone, explainPluZone } from "./plu";
 
 // ─── Fixtures recorded from real API responses (2026-06-11) ───────────────────
 // GET https://apicarto.ign.fr/api/gpu/zone-urba?geom=<Point [lon,lat]>
@@ -149,5 +149,29 @@ describe("fetchPluZone", () => {
     await expect(
       fetchPluZone(-20.8789, 55.4504, { fetchFn: mockFetch as unknown as typeof fetch }),
     ).rejects.toThrow("ETIMEDOUT");
+  });
+});
+
+describe("explainPluZone", () => {
+  it("U → urbaine, constructible, ton défaut", () => {
+    const e = explainPluZone("U");
+    expect(e.category).toBe("Zone urbaine");
+    expect(e.tone).toBe("default");
+    expect(e.meaning).toMatch(/constructible/i);
+  });
+  it("AU (avant A) → à urbaniser", () => {
+    expect(explainPluZone("AUc").category).toBe("Zone à urbaniser");
+  });
+  it("A → agricole, restreint, ton warn", () => {
+    const e = explainPluZone("A");
+    expect(e.category).toBe("Zone agricole");
+    expect(e.tone).toBe("warn");
+  });
+  it("N → naturelle, ton warn", () => {
+    expect(explainPluZone("N").tone).toBe("warn");
+  });
+  it("inconnu/vide → libellé neutre sans phrase", () => {
+    expect(explainPluZone(undefined).category).toBe("Zone PLU");
+    expect(explainPluZone("").meaning).toBe("");
   });
 });

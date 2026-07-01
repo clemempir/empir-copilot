@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { browser } from "wxt/browser";
-import { buildQuickAnalysis, type Listing, type QuickAnalysis } from "@empir/core";
+import { buildQuickAnalysis, explainPluZone, type Listing, type QuickAnalysis } from "@empir/core";
 import type { TabState } from "@/lib/messages";
 import { useAuth } from "@/lib/hooks/use-auth";
 import { useAnalyze } from "@/lib/hooks/use-analyze";
@@ -300,11 +300,18 @@ function mapRisks(raw: unknown): { label: string; level: "low" | "medium" | "hig
 function mapUrbanisme(
   raw: unknown,
 ): { zone: string; subtitle?: string; description?: string; tone?: "default" | "warn" | "info" }[] {
-  const features = (raw as { features?: { properties?: { typezone?: string; libelle?: string } }[] }).features;
+  const features = (raw as {
+    features?: { properties?: { typezone?: string; libelle?: string; libelong?: string } }[];
+  }).features;
   if (!Array.isArray(features)) return [];
-  return features.slice(0, 3).map((f) => ({
-    zone: f.properties?.libelle ?? "Zone PLU",
-    subtitle: f.properties?.typezone,
-    tone: "default" as const,
-  }));
+  return features.slice(0, 3).map((f) => {
+    const p = f.properties ?? {};
+    const ex = explainPluZone(p.typezone);
+    return {
+      zone: p.libelle ? `Zone ${p.libelle}` : ex.category,
+      subtitle: p.libelong || ex.category,
+      description: ex.meaning || undefined,
+      tone: ex.tone,
+    };
+  });
 }
