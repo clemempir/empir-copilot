@@ -1,6 +1,7 @@
 import { ExternalLink, Heart, MapPin, User } from "lucide-react";
 import type { Listing, QuickAnalysis } from "@empir/core";
 import type { ResolvedAddress } from "@empir/core";
+import { cn } from "@/lib/utils";
 import {
   ComparablePriceCard,
   DataRow,
@@ -81,6 +82,11 @@ export function ResultView({
 }: ResultViewProps) {
   const address = resolvedAddress?.address ?? listing.location.rawAddress ?? "";
   const { line1, line2 } = splitAddress(address);
+  // Surface habitable réelle issue du DPE ADEME (colonne « Réel »).
+  const realSurface =
+    resolvedAddress?.verifiedDpe?.surfaceM2 != null
+      ? Math.round(resolvedAddress.verifiedDpe.surfaceM2)
+      : null;
   const propVisual = PROPERTY_VISUALS[propertyKind(listing)];
   const mapsHref = address
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
@@ -267,18 +273,25 @@ export function ResultView({
           className={`${quick.market ? "mt-[11px]" : ""} rounded-empir-card border border-empir-line px-[14px]`}
           style={{ background: "rgba(28,34,50,0.5)" }}
         >
+          {/* En-têtes de colonnes : Affiché (annonce) vs Réel (DPE ADEME) */}
+          <div className="grid grid-cols-[1fr_4rem_4rem] gap-x-2 border-b border-empir-line py-[7px] text-[8.5px] font-bold uppercase tracking-[0.08em] text-empir-muted-2">
+            <span />
+            <span className="text-right">Affiché</span>
+            <span className="text-right">Réel</span>
+          </div>
           {listing.surface != null && (
-            <DataRow label="Surface habitable" value={`${listing.surface} m²`} />
+            <CharRow
+              label="Surface habitable"
+              shown={`${listing.surface} m²`}
+              real={realSurface != null ? `${realSurface} m²` : undefined}
+              mismatch={realSurface != null && Math.abs(realSurface - listing.surface) / listing.surface > 0.05}
+            />
           )}
           {listing.landSurface != null && (
-            <DataRow label="Surface parcelle" value={`${listing.landSurface} m²`} />
+            <CharRow label="Surface parcelle" shown={`${listing.landSurface} m²`} />
           )}
-          {listing.rooms != null && (
-            <DataRow label="Pièces" value={`${listing.rooms} pièces`} />
-          )}
-          {listing.bedrooms != null && (
-            <DataRow label="Chambres" value={`${listing.bedrooms} chambres`} />
-          )}
+          {listing.rooms != null && <CharRow label="Pièces" shown={`${listing.rooms}`} />}
+          {listing.bedrooms != null && <CharRow label="Chambres" shown={`${listing.bedrooms}`} />}
           {resolvedAddress?.parcelId && (
             <DataRow label="Cadastre" value={resolvedAddress.parcelId} />
           )}
@@ -349,6 +362,38 @@ export function ResultView({
           EMPIR · Bâtisseur d'Empire
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Ligne du tableau Caractéristiques : label + valeur affichée (annonce) +
+ * valeur réelle (DPE). « Réel » en vert si présent, orange si écart notable,
+ * gris « — » quand le DPE ne fournit pas la donnée (pièces, terrain…).
+ */
+function CharRow({
+  label,
+  shown,
+  real,
+  mismatch,
+}: {
+  label: string;
+  shown: string;
+  real?: string;
+  mismatch?: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-[1fr_4rem_4rem] items-center gap-x-2 border-b border-empir-line py-[10px] text-[12.5px] last:border-b-0">
+      <span className="text-empir-muted-2">{label}</span>
+      <span className="text-right font-semibold tabular-nums text-empir-text">{shown}</span>
+      <span
+        className={cn(
+          "text-right font-semibold tabular-nums",
+          mismatch ? "text-empir-warn" : real ? "text-empir-success" : "text-empir-muted-2",
+        )}
+      >
+        {real ?? "—"}
+      </span>
     </div>
   );
 }

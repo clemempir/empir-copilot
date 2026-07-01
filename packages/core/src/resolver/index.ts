@@ -346,7 +346,7 @@ function dpeFingerprintCandidate(
     ],
     verifiedDpe:
       c.dpeClass && c.dpeKwhM2 != null && c.gesKgCO2M2 != null
-        ? { class: c.dpeClass, kwhM2: c.dpeKwhM2, gesKgCO2M2: c.gesKgCO2M2 }
+        ? { class: c.dpeClass, kwhM2: c.dpeKwhM2, gesKgCO2M2: c.gesKgCO2M2, surfaceM2: c.surface > 0 ? c.surface : undefined }
         : undefined,
   };
 }
@@ -476,7 +476,7 @@ function lotInBuildingCandidates(
       matchBreakdown: breakdown,
       verifiedDpe:
         c.dpeClass && c.dpeKwhM2 != null && c.gesKgCO2M2 != null
-          ? { class: c.dpeClass, kwhM2: c.dpeKwhM2, gesKgCO2M2: c.gesKgCO2M2 }
+          ? { class: c.dpeClass, kwhM2: c.dpeKwhM2, gesKgCO2M2: c.gesKgCO2M2, surfaceM2: c.surface > 0 ? c.surface : undefined }
           : undefined,
     };
   });
@@ -647,7 +647,7 @@ function toResolved(
     matchBreakdown: breakdown,
     verifiedDpe:
       c.dpeClass && c.dpeKwhM2 != null && c.gesKgCO2M2 != null
-        ? { class: c.dpeClass, kwhM2: c.dpeKwhM2, gesKgCO2M2: c.gesKgCO2M2 }
+        ? { class: c.dpeClass, kwhM2: c.dpeKwhM2, gesKgCO2M2: c.gesKgCO2M2, surfaceM2: c.surface > 0 ? c.surface : undefined }
         : undefined,
   };
 }

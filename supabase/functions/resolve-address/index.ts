@@ -89,7 +89,7 @@ interface ResolvedAddress {
   distanceM?: number;
   flags?: ResolveFlag[];
   matchBreakdown: MatchBreakdownItem[];
-  verifiedDpe?: { class: DpeLetter; kwhM2: number; gesKgCO2M2: number };
+  verifiedDpe?: { class: DpeLetter; kwhM2: number; gesKgCO2M2: number; surfaceM2?: number };
 }
 
 /** Bloc de diagnostic renvoyé au sidepanel (mode debug). */
@@ -181,7 +181,7 @@ function buildCacheKey(input: ResolverInput): string {
     : "_";
   return [
     // Version d'algo : bumper à chaque changement de logique pour invalider le cache.
-    "v10-ges-conflict",
+    "v11-verified-surface",
     input.postalCode,
     bucket(input.surface, 2),
     bucket(input.dpeKwhM2, 20),
@@ -766,7 +766,7 @@ function dpeFingerprintCandidate(
     ],
     verifiedDpe:
       c.dpeClass && c.dpeKwhM2 != null && c.gesKgCO2M2 != null
-        ? { class: c.dpeClass, kwhM2: c.dpeKwhM2, gesKgCO2M2: c.gesKgCO2M2 }
+        ? { class: c.dpeClass, kwhM2: c.dpeKwhM2, gesKgCO2M2: c.gesKgCO2M2, surfaceM2: c.surface > 0 ? c.surface : undefined }
         : undefined,
   };
 }
@@ -879,7 +879,7 @@ function lotInBuildingCandidates(
       matchBreakdown: breakdown,
       verifiedDpe:
         c.dpeClass && c.dpeKwhM2 != null && c.gesKgCO2M2 != null
-          ? { class: c.dpeClass, kwhM2: c.dpeKwhM2, gesKgCO2M2: c.gesKgCO2M2 }
+          ? { class: c.dpeClass, kwhM2: c.dpeKwhM2, gesKgCO2M2: c.gesKgCO2M2, surfaceM2: c.surface > 0 ? c.surface : undefined }
           : undefined,
     };
   });
@@ -1026,7 +1026,7 @@ function toResolved(
     matchBreakdown: breakdown,
     verifiedDpe:
       c.dpeClass && c.dpeKwhM2 != null && c.gesKgCO2M2 != null
-        ? { class: c.dpeClass, kwhM2: c.dpeKwhM2, gesKgCO2M2: c.gesKgCO2M2 }
+        ? { class: c.dpeClass, kwhM2: c.dpeKwhM2, gesKgCO2M2: c.gesKgCO2M2, surfaceM2: c.surface > 0 ? c.surface : undefined }
         : undefined,
   };
 }

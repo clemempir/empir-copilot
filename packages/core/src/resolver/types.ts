@@ -132,5 +132,7 @@ export interface ResolvedAddress {
     class: DpeLetter;
     kwhM2: number;
     gesKgCO2M2: number;
+    /** Surface habitable réelle du certificat (à comparer à la surface annoncée). */
+    surfaceM2?: number;
   };
 }
