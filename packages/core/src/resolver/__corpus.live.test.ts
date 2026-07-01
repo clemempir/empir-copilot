@@ -61,6 +61,15 @@ const CASES: Case[] = [
     },
     expect: { status: "probable", addressIncludes: "Paix", flag: "dpe-fingerprint" },
   },
+  // ── NÉGATIFS : doivent RESTER unresolved (anti-faux-positif des canaux) ──────
+  {
+    name: "NÉGATIF Hippodrome — maison 425 m² terrain 3000, sans DPE, disque (mal géolocalisé, SeLoger 240186339)",
+    input: {
+      postalCode: "40000", surface: 425, landSurface: 3000, propertyType: "Maison",
+      geo: { lat: 43.90614, lon: -0.52179, radiusM: 2524 },
+    },
+    expect: { status: "unresolved" },
+  },
 ];
 
 // Réseau requis → uniquement quand CORPUS=1 (sinon skippé en CI).
