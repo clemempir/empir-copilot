@@ -23,6 +23,8 @@ interface GeoHint {
   lon: number;
   radiusM?: number;
   precision?: "gps" | "disk";
+  /** Marqueur GPS exploitable comme gate serré (prioritaire sur precision/radiusM). */
+  precise?: boolean;
 }
 
 interface ResolverInput {
@@ -44,10 +46,20 @@ interface ResolverInput {
 
 type ResolveFlag =
   | "geo-decided"
+  | "geo-corroborated"
   | "dpe-confirmed"
   | "dpe-absent"
   | "conflict"
   | "low-margin";
+
+type ResolveStatus = "confirmed" | "probable" | "unresolved";
+
+interface MatchFactor {
+  criterion: string;
+  similarity: number;
+  expected?: string | number;
+  actual?: string | number;
+}
 
 interface MatchBreakdownItem {
   criterion: string;
@@ -55,9 +67,10 @@ interface MatchBreakdownItem {
   expected?: string | number;
   actual?: string | number;
   similarity?: number;
-  weight?: number;
   selectivity?: number;
   contribution?: number;
+  factors?: MatchFactor[];
+  geoCoef?: number;
   distanceM?: number;
 }
 
@@ -68,6 +81,8 @@ interface ResolvedAddress {
   parcelId?: string;
   ademeCertId?: string;
   confidence: number;
+  status: ResolveStatus;
+  /** @deprecated Dérivé de status === "confirmed" (rétro-compat UI). */
   resolved: boolean;
   distanceM?: number;
   flags?: ResolveFlag[];
@@ -164,7 +179,7 @@ function buildCacheKey(input: ResolverInput): string {
     : "_";
   return [
     // Version d'algo : bumper à chaque changement de logique pour invalider le cache.
-    "v3-adaptive",
+    "v4-combos",
     input.postalCode,
     bucket(input.surface, 2),
     bucket(input.dpeKwhM2, 20),
@@ -225,22 +240,20 @@ interface Parcel {
   contenance?: number;
 }
 
-// ── Scoring adaptatif (cf. scorer.ts) ──────────────────────────────────────
+// ── Scoring : croisements multiplicatifs × sélectivité (cf. scorer.ts) ──────
 
-const W = {
-  dpeKwhM2: 0.9,
-  surface: 0.85,
-  dpeDate: 0.85,
-  gesKgCO2M2: 0.6,
-  yearBuilt: 0.5,
-  landSurface: 0.5,
-  apartmentCount: 0.5,
-  dpeClass: 0.35,
-  gesClass: 0.3,
-  buildingType: 0.25,
+const TOL = {
+  surfacePct: [5, 15],
+  consoPct: [10, 25],
+  gesPct: [15, 35],
+  terrainPct: [10, 30],
+  yearAbs: [3, 10],
+  dateDays: [3, 45],
 } as const;
 
+const LETTER_FALLBACK = 0.4;
 const SIM_MATCH = 0.999;
+const SIM_PRESENT = 1e-9;
 const SELECTIVITY_STRONG = 1.0;
 const MS_PER_DAY = 86_400_000;
 
@@ -273,132 +286,170 @@ function simDate(input: ResolverInput, cert: AdemeCert): number | null {
   );
   if (!cands.length) return null;
   const bestDays = Math.min(...cands.map((t) => Math.abs(target - t))) / MS_PER_DAY;
-  return simAbs(bestDays, 3, 10);
+  return simAbs(bestDays, TOL.dateDays[0], TOL.dateDays[1]);
 }
 
-function buildingTypeSim(input: ResolverInput, cert: AdemeCert): number | null {
+function simType(input: ResolverInput, cert: AdemeCert): number | null {
   if (!input.propertyType || !cert.buildingType) return null;
   const want = input.propertyType.toLowerCase();
   if (want === "maison") return cert.buildingType === "maison" ? 1 : 0;
   return cert.buildingType === "appartement" || cert.buildingType === "immeuble" ? 1 : 0;
 }
 
-interface CritDef {
+interface Crit {
   key: string;
-  weight: number;
-  expected: string | number;
   sim(cert: AdemeCert): number | null;
+  expected?: string | number;
   actual(cert: AdemeCert): string | number | undefined;
 }
 
-function activeCriteria(input: ResolverInput): CritDef[] {
-  const crits: CritDef[] = [];
+function criteria(input: ResolverInput): Record<string, Crit | undefined> {
+  const c: Record<string, Crit | undefined> = {};
 
   if (input.surface != null) {
-    const target = input.surface;
-    crits.push({
+    const t = input.surface;
+    c.surface = {
       key: "surface",
-      weight: W.surface,
-      expected: target,
-      sim: (c) => simPct(c.surface, target, 5, 15),
-      actual: (c) => c.surface,
-    });
+      expected: t,
+      sim: (x) => simPct(x.surface, t, TOL.surfacePct[0], TOL.surfacePct[1]),
+      actual: (x) => x.surface,
+    };
   }
 
   if (input.dpeKwhM2 != null) {
-    const target = input.dpeKwhM2;
-    crits.push({
+    const t = input.dpeKwhM2;
+    c.conso = {
       key: "dpeKwhM2",
-      weight: W.dpeKwhM2,
-      expected: target,
-      sim: (c) => (c.dpeKwhM2 == null ? null : simPct(c.dpeKwhM2, target, 5, 15)),
-      actual: (c) => c.dpeKwhM2,
-    });
+      expected: t,
+      sim: (x) => (x.dpeKwhM2 == null ? null : simPct(x.dpeKwhM2, t, TOL.consoPct[0], TOL.consoPct[1])),
+      actual: (x) => x.dpeKwhM2,
+    };
   } else if (input.dpeClass) {
-    const target = input.dpeClass;
-    crits.push({
+    const t = input.dpeClass;
+    c.conso = {
       key: "dpeClass",
-      weight: W.dpeClass,
-      expected: target,
-      sim: (c) => (c.dpeClass == null ? null : c.dpeClass === target ? 1 : 0),
-      actual: (c) => c.dpeClass,
-    });
+      expected: t,
+      sim: (x) => (x.dpeClass == null ? null : (x.dpeClass === t ? 1 : 0) * LETTER_FALLBACK),
+      actual: (x) => x.dpeClass,
+    };
   }
 
   if (input.gesKgCO2M2 != null) {
-    const target = input.gesKgCO2M2;
-    crits.push({
+    const t = input.gesKgCO2M2;
+    c.ges = {
       key: "gesKgCO2M2",
-      weight: W.gesKgCO2M2,
-      expected: target,
-      sim: (c) => (c.gesKgCO2M2 == null ? null : simPct(c.gesKgCO2M2, target, 15, 30)),
-      actual: (c) => c.gesKgCO2M2,
-    });
+      expected: t,
+      sim: (x) => (x.gesKgCO2M2 == null ? null : simPct(x.gesKgCO2M2, t, TOL.gesPct[0], TOL.gesPct[1])),
+      actual: (x) => x.gesKgCO2M2,
+    };
   } else if (input.gesClass) {
-    const target = input.gesClass;
-    crits.push({
+    const t = input.gesClass;
+    c.ges = {
       key: "gesClass",
-      weight: W.gesClass,
-      expected: target,
-      sim: (c) => (c.gesClass == null ? null : c.gesClass === target ? 1 : 0),
-      actual: (c) => c.gesClass,
-    });
+      expected: t,
+      sim: (x) => (x.gesClass == null ? null : (x.gesClass === t ? 1 : 0) * LETTER_FALLBACK),
+      actual: (x) => x.gesClass,
+    };
   }
 
   if (input.yearBuilt != null) {
-    const target = input.yearBuilt;
-    crits.push({
+    const t = input.yearBuilt;
+    c.year = {
       key: "yearBuilt",
-      weight: W.yearBuilt,
-      expected: target,
-      sim: (c) => (c.yearBuilt == null ? null : simAbs(Math.abs(c.yearBuilt - target), 2, 5)),
-      actual: (c) => c.yearBuilt,
-    });
+      expected: t,
+      sim: (x) => (x.yearBuilt == null ? null : simAbs(Math.abs(x.yearBuilt - t), TOL.yearAbs[0], TOL.yearAbs[1])),
+      actual: (x) => x.yearBuilt,
+    };
   }
 
   if (input.landSurface != null && input.propertyType === "Maison") {
-    const target = input.landSurface;
-    crits.push({
+    const t = input.landSurface;
+    c.terrain = {
       key: "landSurface",
-      weight: W.landSurface,
-      expected: target,
-      sim: (c) => (c.landSurface == null ? null : simPct(c.landSurface, target, 10, 25)),
-      actual: (c) => c.landSurface,
-    });
+      expected: t,
+      sim: (x) => (x.landSurface == null ? null : simPct(x.landSurface, t, TOL.terrainPct[0], TOL.terrainPct[1])),
+      actual: (x) => x.landSurface,
+    };
   }
 
   if (input.apartmentCount != null) {
-    const target = input.apartmentCount;
-    crits.push({
+    const t = input.apartmentCount;
+    c.apts = {
       key: "apartmentCount",
-      weight: W.apartmentCount,
-      expected: target,
-      sim: (c) => (c.apartmentCount == null ? null : c.apartmentCount === target ? 1 : 0),
-      actual: (c) => c.apartmentCount,
-    });
+      expected: t,
+      sim: (x) => (x.apartmentCount == null ? null : x.apartmentCount === t ? 1 : 0),
+      actual: (x) => x.apartmentCount,
+    };
   }
 
   if (input.dpeDate) {
-    crits.push({
+    c.date = {
       key: "dpeDate",
-      weight: W.dpeDate,
       expected: input.dpeDate,
-      sim: (c) => simDate(input, c),
-      actual: (c) => c.dpeDate ?? c.dpeVisitDate,
-    });
+      sim: (x) => simDate(input, x),
+      actual: (x) => x.dpeDate ?? x.dpeVisitDate,
+    };
   }
 
   if (input.propertyType) {
-    crits.push({
+    c.type = {
       key: "buildingType",
-      weight: W.buildingType,
       expected: input.propertyType,
-      sim: (c) => buildingTypeSim(input, c),
-      actual: (c) => c.buildingType,
-    });
+      sim: (x) => simType(input, x),
+      actual: (x) => x.buildingType,
+    };
   }
 
-  return crits;
+  return c;
+}
+
+interface ComboDef {
+  label: string;
+  members: Crit[];
+}
+
+function comboDefs(input: ResolverInput): ComboDef[] {
+  const c = criteria(input);
+
+  const spineMembers: Crit[] = [];
+  if (c.date) spineMembers.push(c.date);
+  if (c.conso) spineMembers.push(c.conso);
+  if (c.type) spineMembers.push(c.type);
+  const spineIsFallback = spineMembers.length === 0;
+  if (spineIsFallback) {
+    if (c.surface) spineMembers.push(c.surface);
+    if (c.type) spineMembers.push(c.type);
+  }
+
+  const combos: ComboDef[] = [];
+  if (spineMembers.length) combos.push({ label: "épine", members: spineMembers });
+
+  const spine = spineMembers;
+  if (c.ges) combos.push({ label: "épine×ges", members: [...spine, c.ges] });
+  if (c.surface && !spineIsFallback) combos.push({ label: "épine×surface", members: [...spine, c.surface] });
+  if (c.year) combos.push({ label: "épine×année", members: [...spine, c.year] });
+  if (c.apts) combos.push({ label: "épine×lots", members: [...spine, c.apts] });
+  if (c.terrain) combos.push({ label: "terrain", members: [c.terrain] });
+
+  return combos;
+}
+
+function comboValue(combo: ComboDef, cert: AdemeCert): number {
+  let v = 1;
+  for (const m of combo.members) {
+    const s = m.sim(cert);
+    if (s == null || s <= 0) return 0;
+    v *= s;
+  }
+  return v;
+}
+
+function comboMatches(combo: ComboDef, cert: AdemeCert): boolean {
+  for (const m of combo.members) {
+    const s = m.sim(cert);
+    if (s == null || s < SIM_PRESENT) return false;
+  }
+  return true;
 }
 
 function round3(n: number): number {
@@ -408,13 +459,10 @@ function round3(n: number): number {
 function computeSelectivities(input: ResolverInput, pool: AdemeCert[]): Map<string, number> {
   const sels = new Map<string, number>();
   const n = pool.length;
-  for (const crit of activeCriteria(input)) {
+  for (const combo of comboDefs(input)) {
     let match = 0;
-    for (const c of pool) {
-      const s = crit.sim(c);
-      if (s != null && s >= SIM_MATCH) match += 1;
-    }
-    sels.set(crit.key, -Math.log((1 + match) / (1 + n)));
+    for (const c of pool) if (comboMatches(combo, c)) match += 1;
+    sels.set(combo.label, -Math.log((1 + match) / (1 + n)));
   }
   return sels;
 }
@@ -435,22 +483,29 @@ function scoreCertificate(
   let score = 0;
   let strongConcordant = 0;
 
-  for (const crit of activeCriteria(input)) {
-    const sim = crit.sim(cert);
-    if (sim == null) continue;
-    const selectivity = selectivities.get(crit.key) ?? 0;
-    const contribution = crit.weight * sim * selectivity;
+  for (const combo of comboDefs(input)) {
+    const value = comboValue(combo, cert);
+    const selectivity = selectivities.get(combo.label) ?? 0;
+    const contribution = value * selectivity;
     score += contribution;
-    if (sim >= 0.5 && selectivity >= SELECTIVITY_STRONG) strongConcordant += 1;
+    if (value > 0 && selectivity >= SELECTIVITY_STRONG) strongConcordant += 1;
+
+    const factors: MatchFactor[] = combo.members.map((m) => ({
+      criterion: m.key,
+      similarity: round3(m.sim(cert) ?? 0),
+      expected: m.expected,
+      actual: m.actual(cert),
+    }));
+    const distinctive = combo.members[combo.members.length - 1];
     breakdown.push({
-      criterion: crit.key,
-      matched: sim >= SIM_MATCH,
-      similarity: round3(sim),
-      weight: crit.weight,
+      criterion: combo.label,
+      matched: value >= SIM_MATCH,
+      similarity: round3(value),
       selectivity: round3(selectivity),
       contribution: round3(contribution),
-      expected: crit.expected,
-      actual: crit.actual(cert),
+      factors,
+      expected: distinctive?.expected,
+      actual: distinctive?.actual(cert),
     });
   }
 
@@ -466,9 +521,17 @@ function distanceM(lat1: number, lon1: number, lat2: number, lon2: number): numb
 }
 
 function isPreciseMarker(geo: GeoHint): boolean {
+  if (geo.precise != null) return geo.precise;
   if (geo.precision === "gps") return true;
   if (geo.precision === "disk") return false;
   return geo.radiusM == null || geo.radiusM <= 50;
+}
+
+function geoDiskCoef(distanceM: number | undefined, radiusM: number): number {
+  if (distanceM == null) return 1;
+  if (distanceM <= radiusM) return 1;
+  const coef = 1 - (distanceM - radiusM) / radiusM;
+  return coef < 0 ? 0 : coef;
 }
 
 // ── Orchestration (cf. index.ts) ───────────────────────────────────────────
@@ -477,7 +540,13 @@ const PRECISE_GATE_M = 30;
 const MARKER_DEMOTE_M = 200;
 const GEO_DECIDE_M = 25;
 const GEO_ISOLATED_M = 100;
-const MARGIN_RESOLVE = 1.5;
+const DISK_DEFAULT_R = 300;
+const MARGIN_CONFIRM = 1.5;
+const MARGIN_PROBABLE = 1.2;
+const ACC_K = 3;
+const ACC_CAP = 10;
+const W_ACC = 0.45;
+const W_MARGIN = 0.55;
 
 async function resolveAddress(
   input: ResolverInput,
@@ -490,6 +559,7 @@ async function resolveAddress(
   const dist = new Map<AdemeCert, number>();
   let precise = false;
   let pool = certs;
+  let diskRadius = 0;
   if (input.geo) {
     const g = input.geo;
     for (const c of certs) {
@@ -497,13 +567,19 @@ async function resolveAddress(
     }
     const nearest = Math.min(...[...dist.values()], Infinity);
     precise = isPreciseMarker(g) && nearest <= MARKER_DEMOTE_M;
-    const gateR = precise ? PRECISE_GATE_M : (g.radiusM ?? 300);
+    diskRadius = g.radiusM ?? DISK_DEFAULT_R;
+    const gateR = precise ? PRECISE_GATE_M : diskRadius;
     const gated = certs.filter((c) => (dist.get(c) ?? Infinity) <= gateR);
     if (gated.length) pool = gated;
   }
 
   const selectivities = computeSelectivities(input, pool);
-  const scored = pool.map((c) => scoreCertificate(input, c, selectivities));
+  const useDiskCoef = input.geo != null && !precise;
+  const scored = pool.map((c) => {
+    const s = scoreCertificate(input, c, selectivities);
+    if (useDiskCoef) s.score = round3(s.score * geoDiskCoef(dist.get(c), diskRadius));
+    return s;
+  });
   const addresses = groupByAddress(scored);
   const ranked = decide(input, addresses, dist, precise, 5);
 
@@ -548,21 +624,56 @@ function groupByAddress(scored: Scored[]): Scored[] {
   return [...best.values()];
 }
 
-const COHERENCE_KEYS = new Set(["surface", "dpeKwhM2", "dpeClass", "gesKgCO2M2", "gesClass"]);
-
 type Coherence = "concordant" | "absent" | "conflict";
 
-function coherence(sc: Scored): Coherence {
-  const evaluable = sc.breakdown.filter(
-    (b) => COHERENCE_KEYS.has(b.criterion) && b.similarity != null,
-  );
-  if (!evaluable.length) return "absent";
-  if (evaluable.every((b) => (b.similarity ?? 0) < 0.2)) return "conflict";
-  return "concordant";
+const COH_CONSO_TOL = 0.25;
+const COH_GES_TOL = 0.35;
+
+function within(actual: number, target: number, tol: number): boolean {
+  return Math.abs(actual - target) <= Math.abs(target) * tol;
+}
+
+function typeCompatible(input: ResolverInput, cert: AdemeCert): boolean | null {
+  if (!input.propertyType || !cert.buildingType) return null;
+  const want = input.propertyType.toLowerCase();
+  if (want === "maison") return cert.buildingType === "maison";
+  return cert.buildingType === "appartement" || cert.buildingType === "immeuble";
+}
+
+/**
+ * Cohérence DPE basée sur la SIGNATURE ÉNERGÉTIQUE (DPE/GES) + type, PAS la
+ * surface (deux logements voisins partagent souvent une surface proche).
+ *   – absent  : rien de comparable ; conflict : type incompatible OU DPE/GES
+ *     discordants ; concordant : ≥ 1 indicateur énergie concorde.
+ */
+function coherence(input: ResolverInput, cert: AdemeCert): Coherence {
+  if (typeCompatible(input, cert) === false) return "conflict";
+
+  const signals: boolean[] = [];
+  if (input.dpeKwhM2 != null && cert.dpeKwhM2 != null) {
+    signals.push(within(cert.dpeKwhM2, input.dpeKwhM2, COH_CONSO_TOL));
+  } else if (input.dpeClass && cert.dpeClass) {
+    signals.push(cert.dpeClass === input.dpeClass);
+  }
+  if (input.gesKgCO2M2 != null && cert.gesKgCO2M2 != null) {
+    signals.push(within(cert.gesKgCO2M2, input.gesKgCO2M2, COH_GES_TOL));
+  } else if (input.gesClass && cert.gesClass) {
+    signals.push(cert.gesClass === input.gesClass);
+  }
+
+  if (!signals.length) return "absent";
+  if (signals.some(Boolean)) return "concordant";
+  return "conflict";
 }
 
 function clamp01(x: number): number {
   return Math.max(0, Math.min(1, x));
+}
+
+interface Decision {
+  status: ResolveStatus;
+  confidence: number;
+  flags: ResolveFlag[];
 }
 
 function decide(
@@ -579,15 +690,14 @@ function decide(
   const score2 = byScore[1]?.score ?? 0;
   const margin = score1 / Math.max(score2, 1e-6);
   const marginScore = clamp01(1 - 1 / margin);
-  const confAttr = clamp01(0.6 * marginScore + 0.4 * clamp01(byScore[0]!.strongConcordant / 2));
+  const acc = Math.min(score1 * ACC_K, ACC_CAP) / ACC_CAP;
+  const confAttr = clamp01(W_ACC * acc + W_MARGIN * marginScore);
+  const strong = byScore[0]!.strongConcordant;
 
   let top = byScore[0]!;
-  const flags: ResolveFlag[] = [];
-  let confidence: number;
-  let resolved: boolean;
+  let decision: Decision;
 
-  const usePreciseGeo = input.geo != null && precise;
-  if (usePreciseGeo) {
+  if (input.geo != null && precise) {
     const byDist = [...addresses].sort(
       (a, b) => (dist.get(a.cert) ?? Infinity) - (dist.get(b.cert) ?? Infinity),
     );
@@ -596,51 +706,99 @@ function decide(
     const d1 = byDist[1] ? (dist.get(byDist[1].cert) ?? Infinity) : Infinity;
     const decided = d0 <= GEO_DECIDE_M && d1 > GEO_ISOLATED_M;
     const confGeo = clamp01(d0 < 15 ? 1 : d0 <= GEO_DECIDE_M ? 0.85 : 0.6) * (decided ? 1 : 0.7);
-    const coh = coherence(top);
-    if (coh === "conflict") {
-      flags.push("conflict");
-      confidence = Math.min(Math.round(confAttr * 100), 30);
-      resolved = false;
-    } else if (coh === "absent") {
-      flags.push("geo-decided", "dpe-absent");
-      confidence = Math.round(confGeo * 85);
-      resolved = confGeo >= 0.7;
-    } else {
-      flags.push("geo-decided", "dpe-confirmed");
-      confidence = Math.max(85, Math.round(confGeo * 100));
-      resolved = true;
-    }
+    decision = decidePreciseGeo(input, top, d0, confGeo, confAttr);
   } else {
-    if (margin < MARGIN_RESOLVE) flags.push("low-margin");
-    confidence = Math.round(confAttr * 100);
-    resolved = margin >= MARGIN_RESOLVE && byScore[0]!.strongConcordant >= 1;
+    decision = decideAttributes(margin, strong, confAttr, coherence(input, top.cert));
   }
 
+  // Un candidat alternatif ne peut pas afficher plus de confiance que le top :
+  // confiance proportionnelle au score relatif, plafonnée à celle du top.
   const rest = byScore.filter((s) => s !== top);
   const ordered = [top, ...rest].slice(0, limit);
+  return ordered.map((s, i) => {
+    if (i === 0) return toResolved(s, dist, input, decision);
+    const conf =
+      top.score > 0 ? Math.min(Math.round((s.score / top.score) * decision.confidence), decision.confidence) : 0;
+    return toResolved(s, dist, input, { status: "unresolved", confidence: conf, flags: [] });
+  });
+}
 
-  return ordered.map((s, i) =>
-    toResolved(s, dist, i === 0 ? { confidence, resolved, flags } : undefined),
-  );
+function decidePreciseGeo(input: ResolverInput, top: Scored, d0: number, confGeo: number, confAttr: number): Decision {
+  const coh = coherence(input, top.cert);
+  if (coh === "conflict") {
+    return { status: "unresolved", confidence: Math.min(Math.round(confAttr * 100), 30), flags: ["conflict"] };
+  }
+  if (coh === "absent") {
+    return {
+      status: "probable",
+      confidence: Math.round(confGeo * 80),
+      flags: ["geo-decided", "dpe-absent"],
+    };
+  }
+  // HAUTE seulement si le cert cohérent est dans le gate serré ; sinon le
+  // marqueur précis pointe entre les adresses connues → probable.
+  if (d0 <= GEO_DECIDE_M) {
+    return {
+      status: "confirmed",
+      confidence: Math.max(85, Math.round(confGeo * 100)),
+      flags: ["geo-corroborated", "dpe-confirmed"],
+    };
+  }
+  return {
+    status: "probable",
+    confidence: Math.round(confGeo * 100),
+    flags: ["geo-decided", "dpe-confirmed"],
+  };
+}
+
+function decideAttributes(
+  margin: number,
+  strong: number,
+  confAttr: number,
+  coh: Coherence,
+): Decision {
+  const confidence = Math.round(confAttr * 100);
+  if (coh === "conflict") {
+    return { status: "unresolved", confidence: Math.min(confidence, 30), flags: ["conflict"] };
+  }
+  if (margin >= MARGIN_CONFIRM && strong >= 1) {
+    return { status: "confirmed", confidence, flags: [] };
+  }
+  if (margin >= MARGIN_PROBABLE) {
+    return { status: "probable", confidence, flags: [] };
+  }
+  return { status: "unresolved", confidence, flags: ["low-margin"] };
 }
 
 function toResolved(
   s: Scored,
   dist: Map<AdemeCert, number>,
-  topDecision?: { confidence: number; resolved: boolean; flags: ResolveFlag[] },
+  input: ResolverInput,
+  decision?: Decision,
 ): ResolvedAddress {
   const c = s.cert;
   const d = dist.get(c);
+  const status: ResolveStatus = decision?.status ?? "unresolved";
+  const breakdown = [...s.breakdown];
+  if (input.geo != null && d != null) {
+    breakdown.push({
+      criterion: "_geo",
+      matched: d <= GEO_DECIDE_M,
+      distanceM: Math.round(d),
+      geoCoef: round3(geoDiskCoef(d, input.geo.radiusM ?? DISK_DEFAULT_R)),
+    });
+  }
   return {
     address: c.address,
     lat: c.lat ?? 0,
     lon: c.lon ?? 0,
     ademeCertId: c.certId,
-    confidence: topDecision?.confidence ?? Math.min(Math.round(s.score * 20), 100),
-    resolved: topDecision?.resolved ?? false,
+    confidence: decision?.confidence ?? Math.min(Math.round(s.score * 20), 100),
+    status,
+    resolved: status === "confirmed",
     distanceM: d != null ? Math.round(d) : undefined,
-    flags: topDecision?.flags?.length ? topDecision.flags : undefined,
-    matchBreakdown: s.breakdown,
+    flags: decision?.flags.length ? decision.flags : undefined,
+    matchBreakdown: breakdown,
     verifiedDpe:
       c.dpeClass && c.dpeKwhM2 != null && c.gesKgCO2M2 != null
         ? { class: c.dpeClass, kwhM2: c.dpeKwhM2, gesKgCO2M2: c.gesKgCO2M2 }
@@ -665,7 +823,9 @@ async function fetchAdeme(input: ResolverInput): Promise<AdemeCert[]> {
   let lastUrl = "";
   for (const datasetId of ADEME_DATASET_IDS) {
     const url = new URL(`https://data.ademe.fr/data-fair/api/v1/datasets/${datasetId}/lines`);
-    url.searchParams.set("size", "1000");
+    // Max d'une page ADEME : une commune dense dépasse 1000 certs ; tronquer
+    // écarterait le bon certificat du gate géo (cf. core/ademe.ts).
+    url.searchParams.set("size", "10000");
     url.searchParams.set("code_postal_ban_eq", input.postalCode);
     // Pas de filtre type_batiment : un appartement en copropriété peut n'avoir
     // qu'un DPE de type `immeuble` (ou un lot), exclu sinon avant le scoring.

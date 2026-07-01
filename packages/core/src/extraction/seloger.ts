@@ -27,6 +27,21 @@ interface SelogerFact {
   splitValue?: string;
 }
 
+/**
+ * Barème énergie SeLoger. Deux formats coexistent :
+ *   – ancien : `{ name, rating, value }` (rating = lettre, souvent absent → DOM) ;
+ *   – nouveau : `{ efficiencyClass: { rating }, values: [{ value, label }] }`
+ *     où `values` porte la conso (« 127 kWh/m².an ») et les émissions
+ *     (« 4 kg CO₂/m².an »). DPE et GES sont alors deux scales du MÊME certificat.
+ */
+interface SelogerScale {
+  name?: string;
+  rating?: string;
+  value?: string;
+  efficiencyClass?: { index?: number; rating?: string };
+  values?: Array<{ value?: string; label?: string }>;
+}
+
 interface SelogerCategoryElement {
   icon?: string;
   value: string;
@@ -58,9 +73,7 @@ interface SelogerState {
           description?: { description?: string };
           gallery?: { images?: Array<{ url?: string }> };
           energy?: {
-            certificates?: Array<{
-              scales?: Array<{ name?: string; rating?: string; value?: string }>;
-            }>;
+            certificates?: Array<{ scales?: SelogerScale[] }>;
           };
           features?: {
             details?: { categories?: SelogerCategory[] };
@@ -123,7 +136,8 @@ function readState(doc: Document): SelogerState | null {
 
 function findFact(facts: SelogerFact[], type: string): number | undefined {
   const f = facts.find((x) => x.type === type);
-  return f?.splitValue ? Number(f.splitValue) : undefined;
+  // `splitValue` peut porter un séparateur de milliers (« 40 000 ») → toNumber.
+  return toNumber(f?.splitValue);
 }
 
 function buildAttributes(
@@ -140,16 +154,49 @@ function buildAttributes(
   return result;
 }
 
-function extractDpe(
-  scales: Array<{ name?: string; rating?: string; value?: string }> | undefined,
-): string | undefined {
-  if (!scales) return undefined;
-  for (const scale of scales) {
-    const v = scale.rating ?? scale.value;
-    const letter = toLetter(v);
-    if (letter) return letter;
-  }
-  return undefined;
+const RE_KWH = /kwh/i;
+const RE_CO2 = /co₂|co2|kg/i;
+
+/** Lettre A-G d'un barème : `efficiencyClass.rating` (nouveau) ou `rating`/`value` (ancien). */
+function scaleLetter(s: SelogerScale): string | undefined {
+  return toLetter(s.efficiencyClass?.rating ?? s.rating ?? s.value);
+}
+
+/** Le barème porte-t-il une valeur matchant `re` (sert à distinguer scale DPE/GES) ? */
+function scaleHasValue(s: SelogerScale, re: RegExp): boolean {
+  return (s.values ?? []).some((v) => v.value != null && re.test(v.value));
+}
+
+/**
+ * Extrait UNIQUEMENT les lettres DPE/GES des barèmes énergie, robuste aux deux
+ * structures SeLoger :
+ *   – nouveau : DPE et GES sont deux scales du même certificat ; le scale DPE
+ *     porte une valeur « kWh », le scale GES une valeur « CO₂ » seule ;
+ *   – ancien : un certificat par indicateur (`certificates[0]`=DPE, `[1]`=GES).
+ *
+ * ⚠️ Les CHIFFRES (« 127 kWh », « 4 kg CO₂ ») affichés par SeLoger ne sont PAS
+ * la valeur officielle du DPE ADEME : ce sont des estimations propres au site
+ * (dérivées de la facture énergétique), qui varient d'un bien à l'autre pour une
+ * même lettre. On ne les extrait donc pas — ils fausseraient le résolveur
+ * (clé de conso). Seul un chiffre écrit dans la description libre est fiable.
+ */
+function parseEnergyScales(certificates: Array<{ scales?: SelogerScale[] }>): {
+  dpe?: string;
+  ges?: string;
+} {
+  const scales = certificates.flatMap((c) => c.scales ?? []);
+
+  // Scale DPE = celui qui porte une conso en kWh ; GES = un autre avec du CO₂.
+  const dpeScale = scales.find((s) => scaleHasValue(s, RE_KWH));
+  const gesScale = scales.find((s) => s !== dpeScale && scaleHasValue(s, RE_CO2));
+
+  let dpe = dpeScale ? scaleLetter(dpeScale) : undefined;
+  let ges = gesScale ? scaleLetter(gesScale) : undefined;
+  // Repli ancien format (un certificat par indicateur, lettre seule).
+  if (!dpe) dpe = scaleLetter(certificates[0]?.scales?.[0] ?? {});
+  if (!ges) ges = scaleLetter(certificates[1]?.scales?.[0] ?? {});
+
+  return { dpe, ges };
 }
 
 /**
@@ -162,18 +209,6 @@ function extractDpeGesFromDom(raw: string): { dpe?: string; ges?: string } {
     (m) => m[1],
   );
   return { dpe: letters[0], ges: letters[1] };
-}
-
-/** Valeur numérique d'un barème énergie (le `value` SeLoger porte souvent le chiffre). */
-function extractScaleNumber(
-  scales: Array<{ name?: string; rating?: string; value?: string }> | undefined,
-): number | undefined {
-  if (!scales) return undefined;
-  for (const scale of scales) {
-    const n = toNumber(scale.value);
-    if (n != null && n > 0) return n;
-  }
-  return undefined;
 }
 
 function buildListing(state: SelogerState, url: string, rawSource: string): Listing {
@@ -197,6 +232,11 @@ function buildListing(state: SelogerState, url: string, rawSource: string): List
   const surface = ltProduct?.space ?? undefined;
   const rooms = ltProduct?.nb_rooms ?? undefined;
   const bedrooms = ltProduct?.nb_bedrooms ?? undefined;
+
+  // Surface du terrain : exposée uniquement dans hardFacts (fact `plotSpace`),
+  // absente de legacyTracking. Présente sur les maisons / biens avec terrain.
+  const facts = sections?.hardFacts?.facts ?? [];
+  const landSurface = findFact(facts, "plotSpace");
 
   // Location
   const locAddr = sections?.location?.address;
@@ -222,19 +262,19 @@ function buildListing(state: SelogerState, url: string, rawSource: string): List
     .map((img) => img.url)
     .filter((u): u is string => typeof u === "string");
 
-  // DPE / GES — from energy certificates scales (may be absent for exempt properties)
+  // DPE / GES — barèmes énergie (absents pour les biens exemptés).
   const certificates = sections?.energy?.certificates ?? [];
-  const dpeScales = certificates[0]?.scales;
-  const gesScales = certificates[1]?.scales;
+  const energy = parseEnergyScales(certificates);
   // Lettres DPE/GES : état `__UFRN` en priorité, sinon fallback DOM (pastilles
   // surlignées du bloc énergie, présentes même quand l'état ne porte rien).
   const domLetters = extractDpeGesFromDom(rawSource);
-  const dpe = extractDpe(dpeScales) ?? domLetters.dpe;
-  const ges = extractDpe(gesScales) ?? domLetters.ges;
-  // Valeurs numériques DPE/GES : barème énergie en priorité, sinon regex sur la
-  // description.
-  const dpeKwhM2 = extractScaleNumber(dpeScales) ?? extractKwhM2(description);
-  const gesKgCO2M2 = extractScaleNumber(gesScales) ?? extractGesKgM2(description);
+  const dpe = energy.dpe ?? domLetters.dpe;
+  const ges = energy.ges ?? domLetters.ges;
+  // Valeurs numériques DPE/GES : UNIQUEMENT un chiffre écrit dans la description
+  // libre (fiable, saisi par l'agent). Les barèmes SeLoger n'exposent qu'une
+  // estimation par lettre, écartée (cf. parseEnergyScales).
+  const dpeKwhM2 = extractKwhM2(description);
+  const gesKgCO2M2 = extractGesKgM2(description);
   const dpeDate = extractDpeDate(description);
 
   // Attributes from features.details.categories
@@ -249,6 +289,7 @@ function buildListing(state: SelogerState, url: string, rawSource: string): List
     surface: surface ? Number(surface) : undefined,
     rooms: rooms ? Number(rooms) : undefined,
     bedrooms: bedrooms ? Number(bedrooms) : undefined,
+    landSurface,
     propertyType,
     location: {
       rawAddress: buildRawAddress(city, postalCode, undefined),

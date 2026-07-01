@@ -95,6 +95,109 @@ describe("parseSeloger", () => {
     expect(() => parseSeloger(doc, REAL_URL)).toThrow(/structure inconnue/i);
   });
 
+  // ── surface du terrain (fact plotSpace) ─────────────────────────────────────
+
+  function stateWithFacts(facts: Array<{ type: string; splitValue?: string }>): Document {
+    const state = {
+      app_cldp: {
+        data: {
+          classified: {
+            metadata: {},
+            rawData: { propertyTypeLabel: "Maison" },
+            sections: {
+              hardFacts: { title: "Maison à vendre", facts },
+              location: { address: { city: "Mont-de-Marsan", zipCode: "40000" } },
+              description: { description: "Belle maison avec terrain" },
+              gallery: { images: [] },
+              energy: { certificates: [] },
+              features: { details: { categories: [] } },
+            },
+            legacyTracking: {
+              products: [{ price: 459_000, space: 175, nb_rooms: 7, nb_bedrooms: 4 }],
+            },
+          },
+        },
+      },
+    };
+    const escaped = JSON.stringify(JSON.stringify(state));
+    return docWith(
+      `<body><script>window["__UFRN_LIFECYCLE_SERVERREQUEST__"]=JSON.parse(${escaped});</script></body>`,
+    );
+  }
+
+  it("extrait la surface du terrain (fact plotSpace, séparateur de milliers)", () => {
+    const doc = stateWithFacts([
+      { type: "livingSpace", splitValue: "175" },
+      { type: "plotSpace", splitValue: "40 000" },
+    ]);
+    const listing = parseSeloger(doc, REAL_URL);
+    expect(listing.landSurface).toBe(40_000);
+    expect(listing.surface).toBe(175);
+  });
+
+  it("laisse landSurface indéfini quand aucun fact plotSpace n'est présent", () => {
+    const doc = stateWithFacts([{ type: "livingSpace", splitValue: "89" }]);
+    const listing = parseSeloger(doc, REAL_URL);
+    expect(listing.landSurface).toBeUndefined();
+  });
+
+  // ── barèmes énergie (nouveau format efficiencyClass/values) ─────────────────
+
+  function stateWithEnergy(certificates: unknown): Document {
+    const state = {
+      app_cldp: {
+        data: {
+          classified: {
+            metadata: {},
+            rawData: { propertyTypeLabel: "Appartement" },
+            sections: {
+              hardFacts: { title: "Appartement", facts: [] },
+              location: { address: { city: "Saint-Sever", zipCode: "40500" } },
+              description: { description: "Appartement mansardé" },
+              gallery: { images: [] },
+              energy: { certificates },
+              features: { details: { categories: [] } },
+            },
+            legacyTracking: { products: [{ price: 139_560, space: 46, nb_rooms: 3 }] },
+          },
+        },
+      },
+    };
+    const escaped = JSON.stringify(JSON.stringify(state));
+    return docWith(
+      `<body><script>window["__UFRN_LIFECYCLE_SERVERREQUEST__"]=JSON.parse(${escaped});</script></body>`,
+    );
+  }
+
+  it("extrait les LETTRES DPE C / GES A du nouveau format, sans les chiffres (estimations site)", () => {
+    // Structure réelle SeLoger 2026 : DPE et GES sont deux scales d'un même cert.
+    // Les chiffres (127 kWh, 4 kg) sont des estimations propres au site (elles
+    // varient d'un bien à l'autre pour une même lettre) → on n'extrait que la lettre.
+    const doc = stateWithEnergy([
+      {
+        scales: [
+          {
+            efficiencyClass: { index: 2, rating: "C" },
+            values: [
+              { value: "127 kWh/m².an", label: "Consommation (énergie primaire)" },
+              { value: "4 kg CO₂/m².an", label: "Émissions" },
+            ],
+          },
+          {
+            efficiencyClass: { index: 0, rating: "A" },
+            values: [{ value: "4 kg CO₂/m².an", label: "Émissions" }],
+          },
+        ],
+      },
+    ]);
+    const listing = parseSeloger(doc, REAL_URL);
+    expect(listing.dpe).toBe("C");
+    expect(listing.ges).toBe("A");
+    // Les chiffres du barème SeLoger ne sont PAS retenus (estimation, pas le DPE officiel).
+    expect(listing.dpeKwhM2).toBeUndefined();
+    expect(listing.gesKgCO2M2).toBeUndefined();
+  });
+
   // ── fixture réelle ─────────────────────────────────────────────────────────
   // parseSelogerHtml est utilisé pour les tests de fixture car happy-dom peut
   // supprimer les gros scripts inline lors du parsing via innerHTML.

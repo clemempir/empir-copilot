@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AdemeCertificate } from "./ademe";
 import { computeSelectivities, scoreCertificate } from "./scorer";
+import type { ResolverInput } from "./types";
 
 function cert(p: Partial<AdemeCertificate>): AdemeCertificate {
   return {
@@ -13,59 +14,91 @@ function cert(p: Partial<AdemeCertificate>): AdemeCertificate {
   };
 }
 
-describe("computeSelectivities", () => {
-  it("sélectivité ~0 pour une valeur partagée par tout le vivier", () => {
+/** Recalcule le score « à la main » depuis le breakdown (hors ligne _geo). */
+function recompute(breakdown: { criterion: string; contribution?: number }[]): number {
+  return breakdown
+    .filter((b) => b.criterion !== "_geo")
+    .reduce((acc, b) => acc + (b.contribution ?? 0), 0);
+}
+
+describe("computeSelectivities (par combo)", () => {
+  it("sélectivité ~0 pour un combo partagé par tout le vivier", () => {
     const pool = [cert({ surface: 50 }), cert({ surface: 50 }), cert({ surface: 50 })];
+    // Pas d'attribut fort → épine = surface×type ; ici type absent → épine = surface.
     const sels = computeSelectivities({ postalCode: "40500", surface: 50 }, pool);
-    expect(sels.get("surface")!).toBeCloseTo(0, 5); // -ln(4/4) = 0
+    expect(sels.get("épine")!).toBeCloseTo(0, 5); // -ln(4/4) = 0
   });
 
-  it("forte sélectivité pour une valeur rare (date de DPE)", () => {
+  it("forte sélectivité pour une épine rare (date unique)", () => {
     const pool = [
       cert({ dpeDate: "2023-10-25" }),
       ...Array.from({ length: 9 }, () => cert({ dpeDate: "2020-01-01" })),
     ];
     const sels = computeSelectivities({ postalCode: "40500", dpeDate: "2023-10-25" }, pool);
-    expect(sels.get("dpeDate")!).toBeGreaterThan(1.5); // -ln(2/11) ≈ 1.7
+    expect(sels.get("épine")!).toBeGreaterThan(1.5); // -ln(2/11) ≈ 1.7
   });
 });
 
-describe("scoreCertificate", () => {
-  it("contribution = w·sim·selectivity ; un critère manquant est ignoré (pas de pénalité)", () => {
-    const pool = [cert({ surface: 50, dpeKwhM2: 285 }), cert({ surface: 120, dpeKwhM2: 100 })];
-    const input = { postalCode: "40500", surface: 50, dpeKwhM2: 285 };
+describe("scoreCertificate (croisements multiplicatifs)", () => {
+  it("reproductibilité : Σ contributions du breakdown == score renvoyé", () => {
+    const input: ResolverInput = {
+      postalCode: "40500",
+      surface: 50,
+      dpeKwhM2: 285,
+      dpeDate: "2023-10-25",
+      propertyType: "Maison",
+    };
+    const pool = [
+      cert({ surface: 50, dpeKwhM2: 285, dpeDate: "2023-10-25", buildingType: "maison" }),
+      cert({ surface: 120, dpeKwhM2: 100, dpeDate: "2019-01-01", buildingType: "maison" }),
+      cert({ surface: 52, dpeKwhM2: 280, dpeDate: "2024-06-01", buildingType: "maison" }),
+    ];
     const sels = computeSelectivities(input, pool);
     const s = scoreCertificate(input, pool[0]!, sels);
-    const surf = s.breakdown.find((b) => b.criterion === "surface")!;
-    expect(surf.similarity).toBe(1);
-    expect(surf.contribution).toBeCloseTo(0.85 * 1 * sels.get("surface")!, 3);
-    expect(s.score).toBeGreaterThan(0);
+    expect(recompute(s.breakdown)).toBeCloseTo(s.score, 3);
   });
 
-  it("surface qui diverge → contribution 0, mais le certificat n'est pas pénalisé", () => {
-    const pool = [cert({ surface: 284, dpeKwhM2: 285 }), cert({ surface: 50, dpeKwhM2: 999 })];
-    const input = { postalCode: "40500", surface: 57, dpeKwhM2: 285 };
+  it("un attribut isolé ne rapporte rien : il faut que TOUT le combo s'allume", () => {
+    // Cert dont seule la surface matche, mais l'épine (date×conso) est cassée.
+    const input: ResolverInput = { postalCode: "40500", surface: 50, dpeKwhM2: 285, dpeDate: "2023-10-25" };
+    const pool = [
+      cert({ surface: 50, dpeKwhM2: 999, dpeDate: "2000-01-01" }), // surface OK, épine KO
+      cert({ surface: 50, dpeKwhM2: 285, dpeDate: "2023-10-25" }), // tout OK
+    ];
+    const sels = computeSelectivities(input, pool);
+    const isolated = scoreCertificate(input, pool[0]!, sels);
+    expect(isolated.score).toBe(0); // épine éteinte → tous les combos à 0
+  });
+
+  it("surface qui diverge → le combo surface s'éteint mais l'épine porte le score", () => {
+    const input: ResolverInput = { postalCode: "40500", surface: 57, dpeKwhM2: 285, dpeDate: "2023-10-25" };
+    const pool = [
+      cert({ surface: 284, dpeKwhM2: 285, dpeDate: "2023-10-25" }),
+      cert({ surface: 50, dpeKwhM2: 999, dpeDate: "2000-01-01" }),
+    ];
     const sels = computeSelectivities(input, pool);
     const s = scoreCertificate(input, pool[0]!, sels);
-    const surf = s.breakdown.find((b) => b.criterion === "surface")!;
-    expect(surf.similarity).toBe(0); // 284 vs 57 hors tolérance max
-    expect(s.score).toBeGreaterThan(0); // porté par le DPE numérique
+    const surf = s.breakdown.find((b) => b.criterion === "épine×surface")!;
+    expect(surf.similarity).toBe(0); // 284 vs 57 hors tolérance
+    expect(s.score).toBeGreaterThan(0); // épine (date×conso) intacte
   });
 
   it("date concordante via le fallback date_visite_diagnostiqueur", () => {
     const c = cert({ dpeDate: "2026-05-14", dpeVisitDate: "2026-05-12" });
-    const input = { postalCode: "40500", dpeDate: "2026-05-12" };
+    const input: ResolverInput = { postalCode: "40500", dpeDate: "2026-05-12" };
     const sels = computeSelectivities(input, [c, cert({ dpeDate: "2000-01-01" })]);
     const s = scoreCertificate(input, c, sels);
-    expect(s.breakdown.find((b) => b.criterion === "dpeDate")!.similarity).toBe(1);
+    const spine = s.breakdown.find((b) => b.criterion === "épine")!;
+    expect(spine.factors!.find((f) => f.criterion === "dpeDate")!.similarity).toBe(1);
   });
 
-  it("DPE numérique exclut la lettre (exclusivité)", () => {
-    const c = cert({ dpeKwhM2: 285, dpeClass: "E" });
-    const input = { postalCode: "40500", dpeKwhM2: 285, dpeClass: "E" as const };
+  it("DPE chiffré exclut la lettre (exclusivité)", () => {
+    const c = cert({ dpeKwhM2: 285, dpeClass: "E", dpeDate: "2023-10-25" });
+    const input: ResolverInput = { postalCode: "40500", dpeKwhM2: 285, dpeClass: "E", dpeDate: "2023-10-25" };
     const sels = computeSelectivities(input, [c]);
     const s = scoreCertificate(input, c, sels);
-    expect(s.breakdown.some((b) => b.criterion === "dpeKwhM2")).toBe(true);
-    expect(s.breakdown.some((b) => b.criterion === "dpeClass")).toBe(false);
+    const factors = s.breakdown.flatMap((b) => b.factors ?? []).map((f) => f.criterion);
+    expect(factors).toContain("dpeKwhM2");
+    expect(factors).not.toContain("dpeClass");
   });
 });

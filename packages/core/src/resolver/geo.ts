@@ -15,7 +15,20 @@ export function distanceM(lat1: number, lon1: number, lat2: number, lon2: number
  * source le déclare (`gps`) ou si son rayon est absent / faible.
  */
 export function isPreciseMarker(geo: GeoHint): boolean {
+  if (geo.precise != null) return geo.precise;
   if (geo.precision === "gps") return true;
   if (geo.precision === "disk") return false;
   return geo.radiusM == null || geo.radiusM <= 50;
+}
+
+/**
+ * Coefficient géo multiplicatif « échelle km » (façon parcellai.re) appliqué à
+ * un score attributaire pour un marqueur-DISQUE (non précis) : neutre (1) dans
+ * le rayon, décroît linéairement jusqu'à 0 à 2× le rayon.
+ */
+export function geoDiskCoef(distanceM: number | undefined, radiusM: number): number {
+  if (distanceM == null) return 1; // cert sans position : pas de pénalité
+  if (distanceM <= radiusM) return 1;
+  const coef = 1 - (distanceM - radiusM) / radiusM;
+  return coef < 0 ? 0 : coef;
 }

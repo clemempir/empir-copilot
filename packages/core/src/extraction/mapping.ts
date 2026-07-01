@@ -182,7 +182,8 @@ export function extractSelogerGeo(raw: string | undefined): ListingGeo | undefin
   if (geom.type === "Point" && Array.isArray(geom.coordinates)) {
     const lon = geom.coordinates[0];
     const lat = geom.coordinates[1];
-    if (typeof lat === "number" && typeof lon === "number") return { lat, lon };
+    // Marqueur GPS publié (adresse exacte) ⇒ gate serré côté résolveur.
+    if (typeof lat === "number" && typeof lon === "number") return { lat, lon, precise: true };
     return undefined;
   }
   if (geom.type === "Polygon" || geom.type === "MultiPolygon") {

@@ -60,7 +60,7 @@ export interface FetchAdemeOptions {
   postalCode: string;
   /** Filtre optionnel sur le type de bâtiment (`maison` | `appartement` | `immeuble`). */
   buildingType?: "Appartement" | "Maison" | "Immeuble";
-  /** Nombre maximum de candidats retournés (défaut 1000). */
+  /** Nombre maximum de candidats retournés (défaut 10000 = max d'une page ADEME). */
   limit?: number;
   /** Injection pour test. */
   fetchFn?: typeof fetch;
@@ -151,7 +151,9 @@ export async function fetchAdemeCertificates(
   opts: FetchAdemeOptions,
 ): Promise<AdemeCertificate[]> {
   const fetchFn = opts.fetchFn ?? fetch;
-  const limit = Math.min(opts.limit ?? 1000, 10_000);
+  // Défaut au max d'une page ADEME : une commune dense (Mont-de-Marsan ≈ 8500
+  // certs) dépasse largement 1000 ; tronquer écarte le bon certificat du gate.
+  const limit = Math.min(opts.limit ?? 10_000, 10_000);
 
   const url = new URL(ADEME_BASE);
   url.searchParams.set("size", String(limit));

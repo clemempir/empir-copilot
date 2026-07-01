@@ -70,8 +70,8 @@ function noise(n: number): Record<string, unknown>[] {
   );
 }
 
-describe("resolveAddress — marqueur géo précis", () => {
-  it("le marqueur SeLoger (~4 m) décide l'adresse (Castallet), confiance haute", async () => {
+describe("resolveAddress — marqueur géo précis (gate)", () => {
+  it("SeLoger maison 50 m² G/C, marqueur ~4 m → Castallet, status confirmed", async () => {
     const rows = [
       row({
         id: "2340E3064983P",
@@ -100,19 +100,50 @@ describe("resolveAddress — marqueur géo précis", () => {
         dpeClass: "G",
         gesClass: "C",
         propertyType: "Maison",
-        geo: { lat: 43.75323, lon: -0.57068 },
+        geo: { lat: 43.75323, lon: -0.57068, precise: true },
       },
       { fetchFn: makeFetch(rows) },
     );
     expect(res[0]!.address).toContain("Castallet");
+    expect(res[0]!.status).toBe("confirmed");
     expect(res[0]!.resolved).toBe(true);
     expect(res[0]!.confidence).toBeGreaterThanOrEqual(85);
-    expect(res[0]!.flags).toContain("geo-decided");
+    expect(res[0]!.flags).toContain("geo-corroborated");
     // Le décoy lointain est écarté par le gate spatial.
     expect(res.some((r) => r.ademeCertId === "DECOY")).toBe(false);
   });
 
-  it("DPE au point en contradiction → conflict + non résolu", async () => {
+  it("marqueur sur une MAISON alors que l'annonce est un APPARTEMENT E/C → conflict (surface proche ne sauve pas)", async () => {
+    // Régression : un cert maison C/A à 5 m, surface ~proche (63 vs 69), ne doit
+    // PAS être confirmé pour un appartement E/C — la cohérence se base sur la
+    // signature énergétique + le type, pas sur la surface.
+    const rows = [
+      row({
+        id: "WRONG",
+        address: "11bis Rue Dulaurier 40000 Mont-de-Marsan",
+        geo: "43.89583,-0.50436", // ~1 m du marqueur
+        surface: 63,
+        type: "maison",
+        dpe: "C",
+        gesClass: "A",
+      }),
+    ];
+    const res = await resolveAddress(
+      {
+        postalCode: "40000",
+        surface: 69,
+        dpeClass: "E",
+        gesClass: "C",
+        propertyType: "Appartement",
+        geo: { lat: 43.89583, lon: -0.50435, precise: true },
+      },
+      { fetchFn: makeFetch(rows) },
+    );
+    expect(res[0]!.status).toBe("unresolved");
+    expect(res[0]!.flags).toContain("conflict");
+  });
+
+  it("DPE au point en contradiction → conflict + unresolved (jamais auto-résolu)", async () => {
     const rows = [
       // seul cert au point : immeuble 400 m² classe B, alors que l'annonce dit maison 50 m² G
       row({
@@ -130,18 +161,18 @@ describe("resolveAddress — marqueur géo précis", () => {
         surface: 50,
         dpeClass: "G",
         propertyType: "Maison",
-        geo: { lat: 43.75323, lon: -0.57068 },
+        geo: { lat: 43.75323, lon: -0.57068, precise: true },
       },
       { fetchFn: makeFetch(rows) },
     );
-    expect(res[0]!.resolved).toBe(false);
+    expect(res[0]!.status).toBe("unresolved");
     expect(res[0]!.flags).toContain("conflict");
     expect(res[0]!.confidence).toBeLessThan(50);
   });
 });
 
 describe("resolveAddress — désambiguïsation par attributs (sans géo)", () => {
-  it("immeuble Pontix : la date + la surface immeuble rares le font gagner", async () => {
+  it("Bien'ici immeuble 284 m² / 5 lots / E / 2023-10-25 → Pontix (type×surface×lots)", async () => {
     const rows = [
       row({
         id: "PONTIX",
@@ -162,35 +193,15 @@ describe("resolveAddress — désambiguïsation par attributs (sans géo)", () =
         apartmentCount: 5,
         dpeClass: "E",
         dpeDate: "2023-10-25",
+        propertyType: "Immeuble",
       },
       { fetchFn: makeFetch(rows) },
     );
     expect(res[0]!.address).toContain("Pontix");
-    expect(res[0]!.resolved).toBe(true);
+    expect(res[0]!.status).toBe("confirmed");
   });
 
-  it("Leboncoin immeuble Ursulines : la date de diagnostic unique tranche", async () => {
-    const rows = [
-      row({
-        id: "URSULINES",
-        address: "24 Rue des Ursulines 40500 Saint-Sever",
-        geo: "43.757,-0.576",
-        surfaceImm: 150,
-        type: "immeuble",
-        dpe: "D",
-        date: "2023-12-19",
-      }),
-      ...noise(12),
-    ];
-    const res = await resolveAddress(
-      { postalCode: "40500", surface: 150, dpeClass: "D", dpeDate: "2023-12-19" },
-      { fetchFn: makeFetch(rows) },
-    );
-    expect(res[0]!.address).toContain("Ursulines");
-    expect(res[0]!.resolved).toBe(true);
-  });
-
-  it("Papin : le fallback date_visite évite un faux positif (date_etablissement décalée)", async () => {
+  it("Bien'ici appart 46 m² C/127 / 2026-05-12 → Papin (fallback date_visite)", async () => {
     const rows = [
       row({
         id: "PAPIN",
@@ -228,14 +239,14 @@ describe("resolveAddress — désambiguïsation par attributs (sans géo)", () =
       { fetchFn: makeFetch(rows) },
     );
     expect(res[0]!.address).toContain("Papin");
-    expect(res[0]!.resolved).toBe(true);
-    const dateRow = res[0]!.matchBreakdown.find((b) => b.criterion === "dpeDate");
-    expect(dateRow?.similarity).toBe(1);
+    expect(res[0]!.status).toBe("confirmed");
+    const spine = res[0]!.matchBreakdown.find((b) => b.criterion === "épine");
+    expect(spine?.factors?.find((f) => f.criterion === "dpeDate")?.similarity).toBe(1);
   });
 });
 
-describe("resolveAddress — anti-faux-positif (resolved:false)", () => {
-  it("maison 228 m² SANS DPE → ne résout pas (aucun signal discriminant)", async () => {
+describe("resolveAddress — anti-faux-positif (status unresolved)", () => {
+  it("maison 228 m² SANS DPE → unresolved (aucun signal discriminant)", async () => {
     const rows = [
       row({ id: "A", address: "1 Rue A", surface: 228, type: "maison" }),
       row({ id: "B", address: "2 Rue B", surface: 230, type: "maison" }),
@@ -246,11 +257,39 @@ describe("resolveAddress — anti-faux-positif (resolved:false)", () => {
       { postalCode: "40500", surface: 228, propertyType: "Maison" },
       { fetchFn: makeFetch(rows) },
     );
-    expect(res[0]!.resolved).toBe(false);
+    expect(res[0]!.status).toBe("unresolved");
     expect(res.length).toBeGreaterThan(1); // candidates exposés
   });
 
-  it("marge faible : 2 adresses au score quasi égal → non résolu + candidates[]", async () => {
+  it("immeuble St-Sever D/226/GES C : la date seule ne doit PAS confirmer (cohérence type/surface)", async () => {
+    const rows = [
+      // « 7 Rue Saint-Jean » : MÊME date que l'annonce mais maison 90 m² (type/surface incohérents)
+      row({
+        id: "SAINTJEAN",
+        address: "7 Rue Saint-Jean 40500 Saint-Sever",
+        geo: "43.757,-0.574",
+        surface: 90,
+        type: "maison",
+        dpe: "A",
+        date: "2024-05-28",
+      }),
+      ...noise(9),
+    ];
+    const res = await resolveAddress(
+      {
+        postalCode: "40500",
+        surface: 280,
+        dpeKwhM2: 226,
+        gesClass: "C",
+        dpeDate: "2024-05-28",
+        propertyType: "Immeuble",
+      },
+      { fetchFn: makeFetch(rows) },
+    );
+    expect(res[0]!.status).not.toBe("confirmed"); // jamais un faux confirmed
+  });
+
+  it("2 adresses au score proche, sans géo → unresolved + candidates[]", async () => {
     const rows = [
       row({ id: "A", address: "1 Rue Jumelle", surface: 50, dpe: "G", date: "2024-01-01" }),
       row({ id: "B", address: "2 Rue Jumelle", surface: 50, dpe: "G", date: "2024-01-01" }),
@@ -260,7 +299,7 @@ describe("resolveAddress — anti-faux-positif (resolved:false)", () => {
       { postalCode: "40500", surface: 50, dpeClass: "G", dpeDate: "2024-01-01" },
       { fetchFn: makeFetch(rows) },
     );
-    expect(res[0]!.resolved).toBe(false);
+    expect(res[0]!.status).toBe("unresolved");
     expect(res[0]!.flags).toContain("low-margin");
     expect(res.length).toBeGreaterThanOrEqual(2);
   });

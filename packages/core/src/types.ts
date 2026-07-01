@@ -21,6 +21,8 @@ export interface ListingGeo {
   lon: number;
   radiusM?: number;
   precision?: "gps" | "disk";
+  /** Marqueur GPS publié (adresse exacte) ⇒ gate serré côté résolveur. */
+  precise?: boolean;
 }
 
 export interface Listing {

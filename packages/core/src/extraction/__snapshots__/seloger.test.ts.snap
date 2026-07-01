@@ -79,6 +79,7 @@ La présente annonce immobilière a été rédigée sous la responsabilité édi
   },
   "ges": undefined,
   "gesKgCO2M2": undefined,
+  "landSurface": undefined,
   "location": {
     "city": "Saint-Denis",
     "postalCode": "97400",
