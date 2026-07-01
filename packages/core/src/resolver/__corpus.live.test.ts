@@ -61,6 +61,14 @@ const CASES: Case[] = [
     },
     expect: { status: "probable", addressIncludes: "Paix", flag: "dpe-fingerprint" },
   },
+  {
+    name: "Grands Pins — maison 134 D/224 GES B, terrain 3723, disque (scoring attributaire, SeLoger 272533571)",
+    input: {
+      postalCode: "40000", surface: 134, dpeClass: "D", dpeKwhM2: 224, gesClass: "B", gesKgCO2M2: 8,
+      landSurface: 3723, propertyType: "Maison", geo: { lat: 43.90614, lon: -0.52179, radiusM: 2524 },
+    },
+    expect: { status: "probable", addressIncludes: "Grands Pins" },
+  },
   // ── NÉGATIFS : doivent RESTER unresolved (anti-faux-positif des canaux) ──────
   {
     name: "NÉGATIF Hippodrome — maison 425 m² terrain 3000, sans DPE, disque (mal géolocalisé, SeLoger 240186339)",
