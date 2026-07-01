@@ -167,22 +167,39 @@ function scaleHasValue(s: SelogerScale, re: RegExp): boolean {
   return (s.values ?? []).some((v) => v.value != null && re.test(v.value));
 }
 
+/** Premier nombre > 0 d'un barème dont la valeur matche `re` (« 328 kWh/m².an » → 328). */
+function scaleNumber(s: SelogerScale, re: RegExp): number | undefined {
+  for (const v of s.values ?? []) {
+    if (v.value && re.test(v.value)) {
+      const n = toNumber(v.value);
+      if (n != null && n > 0) return n;
+    }
+  }
+  // Ancien format : `value` porte directement le chiffre.
+  if (s.value) {
+    const n = toNumber(s.value);
+    if (n != null && n > 0) return n;
+  }
+  return undefined;
+}
+
 /**
- * Extrait UNIQUEMENT les lettres DPE/GES des barèmes énergie, robuste aux deux
+ * Extrait DPE/GES (lettres ET chiffres) des barèmes énergie, robuste aux deux
  * structures SeLoger :
  *   – nouveau : DPE et GES sont deux scales du même certificat ; le scale DPE
  *     porte une valeur « kWh », le scale GES une valeur « CO₂ » seule ;
  *   – ancien : un certificat par indicateur (`certificates[0]`=DPE, `[1]`=GES).
  *
- * ⚠️ Les CHIFFRES (« 127 kWh », « 4 kg CO₂ ») affichés par SeLoger ne sont PAS
- * la valeur officielle du DPE ADEME : ce sont des estimations propres au site
- * (dérivées de la facture énergétique), qui varient d'un bien à l'autre pour une
- * même lettre. On ne les extrait donc pas — ils fausseraient le résolveur
- * (clé de conso). Seul un chiffre écrit dans la description libre est fiable.
+ * NB : le CHIFFRE « kWh/m².an » du barème EST la vraie conso du DPE (vérifié :
+ * 127→Papin, 328→3bis Rue de la Paix, exacts) — c'est le signal le plus
+ * discriminant. À ne pas confondre avec l'« estimation de la facture €/an »
+ * (feature `minMaxEstimation`), elle réellement estimée et non extraite.
  */
 function parseEnergyScales(certificates: Array<{ scales?: SelogerScale[] }>): {
   dpe?: string;
   ges?: string;
+  dpeKwhM2?: number;
+  gesKgCO2M2?: number;
 } {
   const scales = certificates.flatMap((c) => c.scales ?? []);
 
@@ -196,7 +213,15 @@ function parseEnergyScales(certificates: Array<{ scales?: SelogerScale[] }>): {
   if (!dpe) dpe = scaleLetter(certificates[0]?.scales?.[0] ?? {});
   if (!ges) ges = scaleLetter(certificates[1]?.scales?.[0] ?? {});
 
-  return { dpe, ges };
+  const dpeKwhM2 = dpeScale ? scaleNumber(dpeScale, RE_KWH) : undefined;
+  // GES chiffré : scale GES dédié, sinon la valeur CO₂ portée par le scale DPE.
+  const gesKgCO2M2 = gesScale
+    ? scaleNumber(gesScale, RE_CO2)
+    : dpeScale
+      ? scaleNumber(dpeScale, RE_CO2)
+      : undefined;
+
+  return { dpe, ges, dpeKwhM2, gesKgCO2M2 };
 }
 
 /**
@@ -270,11 +295,10 @@ function buildListing(state: SelogerState, url: string, rawSource: string): List
   const domLetters = extractDpeGesFromDom(rawSource);
   const dpe = energy.dpe ?? domLetters.dpe;
   const ges = energy.ges ?? domLetters.ges;
-  // Valeurs numériques DPE/GES : UNIQUEMENT un chiffre écrit dans la description
-  // libre (fiable, saisi par l'agent). Les barèmes SeLoger n'exposent qu'une
-  // estimation par lettre, écartée (cf. parseEnergyScales).
-  const dpeKwhM2 = extractKwhM2(description);
-  const gesKgCO2M2 = extractGesKgM2(description);
+  // Valeurs numériques DPE/GES : barème énergie (vraie conso du DPE) en priorité,
+  // sinon regex sur la description libre.
+  const dpeKwhM2 = energy.dpeKwhM2 ?? extractKwhM2(description);
+  const gesKgCO2M2 = energy.gesKgCO2M2 ?? extractGesKgM2(description);
   const dpeDate = extractDpeDate(description);
 
   // Attributes from features.details.categories

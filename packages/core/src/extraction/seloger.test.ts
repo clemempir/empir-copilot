@@ -169,10 +169,10 @@ describe("parseSeloger", () => {
     );
   }
 
-  it("extrait les LETTRES DPE C / GES A du nouveau format, sans les chiffres (estimations site)", () => {
+  it("extrait lettres ET chiffres DPE/GES du nouveau format (efficiencyClass + values)", () => {
     // Structure réelle SeLoger 2026 : DPE et GES sont deux scales d'un même cert.
-    // Les chiffres (127 kWh, 4 kg) sont des estimations propres au site (elles
-    // varient d'un bien à l'autre pour une même lettre) → on n'extrait que la lettre.
+    // Le kWh du barème EST la vraie conso du DPE (vérifié sur annonces réelles) —
+    // signal discriminant, à distinguer de l'estimation de facture €/an.
     const doc = stateWithEnergy([
       {
         scales: [
@@ -192,10 +192,9 @@ describe("parseSeloger", () => {
     ]);
     const listing = parseSeloger(doc, REAL_URL);
     expect(listing.dpe).toBe("C");
+    expect(listing.dpeKwhM2).toBe(127);
     expect(listing.ges).toBe("A");
-    // Les chiffres du barème SeLoger ne sont PAS retenus (estimation, pas le DPE officiel).
-    expect(listing.dpeKwhM2).toBeUndefined();
-    expect(listing.gesKgCO2M2).toBeUndefined();
+    expect(listing.gesKgCO2M2).toBe(4);
   });
 
   // ── fixture réelle ─────────────────────────────────────────────────────────
