@@ -70,6 +70,22 @@ const CASES: Case[] = [
     },
     expect: { status: "unresolved" },
   },
+  {
+    name: "NÉGATIF Bourg-Neuf — appart 66 D/207 GES B, disque (conso banale, SeLoger 256340921)",
+    input: {
+      postalCode: "40000", surface: 66, dpeClass: "D", dpeKwhM2: 207, gesClass: "B", gesKgCO2M2: 6,
+      propertyType: "Appartement", geo: { lat: 43.89691, lon: -0.4916, radiusM: 995 },
+    },
+    expect: { status: "unresolved" },
+  },
+  {
+    name: "NÉGATIF St-Jean-d'Août — appart 64 C/158 GES B, disque (conso banale, SeLoger 265268063)",
+    input: {
+      postalCode: "40000", surface: 64, dpeClass: "C", dpeKwhM2: 158, gesClass: "B", gesKgCO2M2: 6,
+      propertyType: "Appartement", geo: { lat: 43.89461, lon: -0.51551, radiusM: 1190 },
+    },
+    expect: { status: "unresolved" },
+  },
 ];
 
 // Réseau requis → uniquement quand CORPUS=1 (sinon skippé en CI).

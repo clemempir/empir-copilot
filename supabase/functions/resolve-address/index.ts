@@ -181,7 +181,7 @@ function buildCacheKey(input: ResolverInput): string {
     : "_";
   return [
     // Version d'algo : bumper à chaque changement de logique pour invalider le cache.
-    "v7-fingerprint",
+    "v8-fp-hardened",
     input.postalCode,
     bucket(input.surface, 2),
     bucket(input.dpeKwhM2, 20),
@@ -546,6 +546,7 @@ const DISK_DEFAULT_R = 300;
 const LOT_BUILDING_RADIUS = 80;
 const CONSO_EXACT = 0.5;
 const CONSO_GAP = 0.5;
+const FP_SURFACE_TOL = 3;
 const MARGIN_CONFIRM = 1.5;
 const MARGIN_PROBABLE = 1.2;
 const ACC_K = 3;
@@ -707,7 +708,9 @@ function dpeFingerprintCandidate(
     }
     if (typeCompatible(input, c) === false) continue;
     if (input.dpeClass && c.dpeClass && c.dpeClass !== input.dpeClass) continue;
-    if (Math.abs(c.surface - input.surface) > Math.abs(input.surface) * 0.15) continue;
+    // La conso seule ne fait pas une empreinte : surface ET GES doivent corroborer.
+    if (Math.abs(c.surface - input.surface) > FP_SURFACE_TOL) continue;
+    if (input.gesClass && c.gesClass && c.gesClass !== input.gesClass) continue;
     const dConso = Math.abs(c.dpeKwhM2 - target);
     const key = addressKey(c);
     const cur = bestByAddr.get(key);

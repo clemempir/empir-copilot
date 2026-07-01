@@ -189,6 +189,20 @@ describe("resolveAddress — empreinte DPE (conso exacte unique)", () => {
     expect(res[0]!.ademeCertId).toBe("A");
   });
 
+  it("conso exacte MAIS surface/GES divergents → PAS d'empreinte (anti-faux-positif)", async () => {
+    // Cas réel (Bourg-Neuf) : une conso banale (207) partagée par un autre logement
+    // de surface/GES différents ne doit pas déclencher l'empreinte.
+    const rows = [
+      row({ id: "DECOY", address: "245 Rue Loin", surface: 58, type: "appartement", dpe: "D", kwh: 207, gesClass: "A" }),
+      ...noise(6),
+    ];
+    const res = await resolveAddress(
+      { postalCode: "40000", surface: 66, dpeClass: "D", dpeKwhM2: 207, gesClass: "B", propertyType: "Appartement" },
+      { fetchFn: makeFetch(rows) },
+    );
+    expect(res.some((r) => r.flags?.includes("dpe-fingerprint"))).toBe(false);
+  });
+
   it("deux certs à la MÊME conso exacte → ambigu, pas d'empreinte (unresolved)", async () => {
     const rows = [
       row({ id: "A", address: "1 Rue Jumelle", surface: 65, type: "appartement", dpe: "E", kwh: 328 }),
