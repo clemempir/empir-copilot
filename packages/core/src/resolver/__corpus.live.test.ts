@@ -77,7 +77,23 @@ const CASES: Case[] = [
     },
     expect: { status: "probable", addressIncludes: "Laubaner" },
   },
+  {
+    name: "CAHORS Muguet — maison 271 C/150 GES C, disque (cross-ville 46000, SeLoger 272541179)",
+    input: {
+      postalCode: "46000", surface: 271, dpeClass: "C", dpeKwhM2: 150, gesClass: "C", gesKgCO2M2: 23,
+      propertyType: "Maison", geo: { lat: 44.45852, lon: 1.44549, radiusM: 1005 },
+    },
+    expect: { status: "probable", addressIncludes: "Muguet" },
+  },
   // ── NÉGATIFS : doivent RESTER unresolved (anti-faux-positif des canaux) ──────
+  {
+    name: "NÉGATIF Cahors 300 C/138 GES A — cert voisin est GES C (≠2 classes), pas le même bien (SeLoger 257979085)",
+    input: {
+      postalCode: "46000", surface: 300, dpeClass: "C", dpeKwhM2: 138, gesClass: "A", gesKgCO2M2: 1,
+      propertyType: "Maison", geo: { lat: 44.45012, lon: 1.43386, radiusM: 6184 },
+    },
+    expect: { status: "unresolved" },
+  },
   {
     name: "NÉGATIF immeuble 500 F/388 — 0 immeuble ADEME, ne pas confirmer un studio (SeLoger 267780351)",
     input: {

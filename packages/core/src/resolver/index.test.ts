@@ -245,6 +245,18 @@ describe("resolveAddress — lot dans immeuble (DPE de lot absent)", () => {
     expect(res.some((r) => r.ademeCertId === "IMM128" && r.flags?.includes("lot-in-building"))).toBe(false);
   });
 
+  it("même conso mais GES A vs C (2 classes) → conflit (électrique ≠ gaz, biens différents)", async () => {
+    const rows = [
+      row({ id: "GAZ", address: "105 Rue Gaz", geo: "44.45,1.43", surface: 271, type: "maison", dpe: "C", kwh: 141, gesClass: "C" }),
+      ...noise(6),
+    ];
+    const res = await resolveAddress(
+      { postalCode: "46000", surface: 300, dpeClass: "C", dpeKwhM2: 138, gesClass: "A", propertyType: "Maison", geo: { lat: 44.45, lon: 1.43, radiusM: 6184 } },
+      { fetchFn: makeFetch(rows) },
+    );
+    expect(res[0]!.status).toBe("unresolved");
+  });
+
   it("immeuble 500 m² vs studio 19 m² même DPE → conflit de surface (pas de faux confirmed)", async () => {
     // Écart de surface grossier (26×) : un immeuble ne se confirme pas comme un
     // studio qui partage sa classe/conso DPE.

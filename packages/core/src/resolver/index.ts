@@ -202,6 +202,17 @@ const COH_CONSO_TOL = 0.25;
 const COH_GES_TOL = 0.35;
 /** Écart de surface au-delà duquel c'est un bien d'une AUTRE échelle (immeuble ≠ lot). */
 const SURFACE_CONFLICT_RATIO = 2;
+/** Écart de classe GES (en lettres) au-delà duquel c'est un bien différent (A vs C). */
+const GES_CONFLICT_STEPS = 2;
+
+/** Distance en lettres entre deux classes DPE/GES (A..G → 0..6), ou null. */
+function letterSteps(a?: string, b?: string): number | null {
+  if (!a || !b) return null;
+  const ia = "ABCDEFG".indexOf(a.toUpperCase());
+  const ib = "ABCDEFG".indexOf(b.toUpperCase());
+  if (ia < 0 || ib < 0) return null;
+  return Math.abs(ia - ib);
+}
 
 function within(actual: number, target: number, tol: number): boolean {
   return Math.abs(actual - target) <= Math.abs(target) * tol;
@@ -238,6 +249,10 @@ function coherence(input: ResolverInput, cert: AdemeCertificate): Coherence {
     const ratio = Math.max(input.surface, cert.surface) / Math.min(input.surface, cert.surface);
     if (ratio > SURFACE_CONFLICT_RATIO) return "conflict";
   }
+  // GES qui contredit franchement (≥ 2 classes) → énergie différente = autre bien
+  // (même conso mais GES A électrique vs GES C gaz = maisons distinctes).
+  const gesSteps = letterSteps(input.gesClass, cert.gesClass);
+  if (gesSteps != null && gesSteps >= GES_CONFLICT_STEPS) return "conflict";
 
   const signals: boolean[] = [];
   if (input.dpeKwhM2 != null && cert.dpeKwhM2 != null) {

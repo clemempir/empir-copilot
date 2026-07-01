@@ -181,7 +181,7 @@ function buildCacheKey(input: ResolverInput): string {
     : "_";
   return [
     // Version d'algo : bumper à chaque changement de logique pour invalider le cache.
-    "v9-surface-conflict",
+    "v10-ges-conflict",
     input.postalCode,
     bucket(input.surface, 2),
     bucket(input.dpeKwhM2, 20),
@@ -647,6 +647,15 @@ type Coherence = "concordant" | "absent" | "conflict";
 const COH_CONSO_TOL = 0.25;
 const COH_GES_TOL = 0.35;
 const SURFACE_CONFLICT_RATIO = 2;
+const GES_CONFLICT_STEPS = 2;
+
+function letterSteps(a?: string, b?: string): number | null {
+  if (!a || !b) return null;
+  const ia = "ABCDEFG".indexOf(a.toUpperCase());
+  const ib = "ABCDEFG".indexOf(b.toUpperCase());
+  if (ia < 0 || ib < 0) return null;
+  return Math.abs(ia - ib);
+}
 
 function within(actual: number, target: number, tol: number): boolean {
   return Math.abs(actual - target) <= Math.abs(target) * tol;
@@ -672,6 +681,8 @@ function coherence(input: ResolverInput, cert: AdemeCert): Coherence {
     const ratio = Math.max(input.surface, cert.surface) / Math.min(input.surface, cert.surface);
     if (ratio > SURFACE_CONFLICT_RATIO) return "conflict";
   }
+  const gesSteps = letterSteps(input.gesClass, cert.gesClass);
+  if (gesSteps != null && gesSteps >= GES_CONFLICT_STEPS) return "conflict";
 
   const signals: boolean[] = [];
   if (input.dpeKwhM2 != null && cert.dpeKwhM2 != null) {
