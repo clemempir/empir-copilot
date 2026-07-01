@@ -244,7 +244,8 @@ export default function App() {
           hasUnread={notifs.items.some((n) => !n.read)}
           risks={analyze.result?.enrichments?.risks ? mapRisks(analyze.result.enrichments.risks) : []}
           urbanisme={analyze.result?.enrichments?.plu ? mapUrbanisme(analyze.result.enrichments.plu) : []}
-          salesHistory={[]} // V1 : alimenté ultérieurement par enrichments.dvf
+          salesHistory={market.timeline?.nodes ?? []}
+          salesSummary={market.timeline?.summary ?? null}
         />
       )}
 

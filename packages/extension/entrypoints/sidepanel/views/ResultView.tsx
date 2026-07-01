@@ -22,6 +22,8 @@ export interface ResultViewProps {
   risks?: { label: string; level: RiskLevel; statusLabel?: string }[];
   urbanisme?: { zone: string; subtitle?: string; description?: string; tone?: "default" | "warn" | "info" }[];
   salesHistory?: { year: number; price: number }[];
+  /** Résumé d'évolution sous la frise, ex. « +22 % depuis 2021 · +4 %/an ». */
+  salesSummary?: string | null;
   usage?: { used: number; limit: number };
   /** Notification non lue → pastille rouge sur le bouton compte. */
   hasUnread?: boolean;
@@ -71,6 +73,7 @@ export function ResultView({
   risks = [],
   urbanisme = [],
   salesHistory = [],
+  salesSummary = null,
   hasUnread,
   onSaveClick,
   onAccountClick,
@@ -282,13 +285,20 @@ export function ResultView({
         </div>
 
         {/* ─── HISTORIQUE DE VENTE ─── */}
-        {salesHistory.length >= 2 && (
-          <>
-            <SectionHeader label="Historique de vente" />
-            <div className="px-[2px] pt-1 pb-[2px]">
-              <SalesTimeline nodes={salesHistory} />
-            </div>
-          </>
+        <SectionHeader label="Historique de vente" />
+        {salesHistory.length >= 2 ? (
+          <div className="px-[2px] pt-1 pb-[2px]">
+            <SalesTimeline nodes={salesHistory} />
+            {salesSummary && (
+              <div className="mt-2.5 text-center text-[10.5px] font-medium text-empir-muted">
+                {salesSummary}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-empir-card border border-empir-line bg-empir-card px-[14px] py-3 text-[11px] text-empir-muted-2">
+            Pas d'historique disponible
+          </div>
         )}
 
         {/* ─── URBANISME ─── */}

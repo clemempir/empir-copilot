@@ -2,7 +2,16 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { parseDvfCsv, computeMarketStats, fetchCommuneSales, haversineM, DVF_YEARS } from "./dvf";
+import {
+  parseDvfCsv,
+  computeMarketStats,
+  fetchCommuneSales,
+  haversineM,
+  DVF_YEARS,
+  propertySaleHistory,
+  buildSaleTimeline,
+} from "./dvf";
+import type { DvfSale } from "../types";
 
 const csv = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "fixtures/dvf-sample.csv"),
@@ -464,5 +473,71 @@ describe("fetchCommuneSales", () => {
     const fetchFn = vi.fn().mockResolvedValue(new Response("not found", { status: 404 }));
     await fetchCommuneSales("97411", { years: [2025], fetchFn });
     expect((fetchFn.mock.calls[0]![0] as string)).toContain("/communes/974/97411.csv");
+  });
+});
+
+// ─── Historique de vente du bien ────────────────────────────────────────────
+
+const mkSale = (o: Partial<DvfSale> & { date: string; price: number }): DvfSale => ({
+  idMutation: o.idMutation ?? o.date,
+  date: o.date,
+  price: o.price,
+  surface: o.surface ?? 100,
+  rooms: o.rooms ?? 4,
+  pricePerM2: o.price / (o.surface ?? 100),
+  type: o.type ?? "Maison",
+  lat: o.lat ?? 44.45,
+  lon: o.lon ?? 1.44,
+  address: o.address ?? "12 Rue des Lilas",
+});
+
+describe("propertySaleHistory", () => {
+  const sales = [
+    mkSale({ date: "2019-05-01", price: 200000, address: "12 Rue des Lilas" }),
+    mkSale({ date: "2023-09-01", price: 250000, address: "12 Rue des Lilas" }),
+    mkSale({ date: "2022-01-01", price: 300000, address: "40 Avenue du Parc", lat: 44.46, lon: 1.45 }),
+  ];
+
+  it("matche par rue+numéro, sans être gêné par le code postal/ville de l'adresse résolue", () => {
+    const h = propertySaleHistory(sales, {
+      address: "12 Rue des Lilas 46000 Cahors",
+      lat: 44.45,
+      lon: 1.44,
+    });
+    expect(h.map((s) => s.price)).toEqual([200000, 250000]); // triées par date
+  });
+
+  it("sans adresse, retombe sur la proximité (≤ 20 m)", () => {
+    const h = propertySaleHistory(sales, { lat: 44.45, lon: 1.44 });
+    expect(h.length).toBe(2);
+  });
+
+  it("filtre par surface proche (±20 %) pour rester sur le même logement", () => {
+    const withOther = [
+      ...sales,
+      mkSale({ date: "2021-01-01", price: 90000, surface: 30, address: "12 Rue des Lilas" }),
+    ];
+    const h = propertySaleHistory(withOther, { address: "12 Rue des Lilas", lat: 44.45, lon: 1.44, surface: 100 });
+    expect(h.every((s) => s.surface >= 80 && s.surface <= 120)).toBe(true);
+  });
+});
+
+describe("buildSaleTimeline", () => {
+  it("frise = ventes passées + prix affiché, avec % d'évolution", () => {
+    const history = [mkSale({ date: "2019-05-01", price: 200000 })];
+    const tl = buildSaleTimeline(history, 260000, new Date("2025-06-01"));
+    expect(tl.nodes).toEqual([
+      { year: 2019, price: 200000 },
+      { year: 2025, price: 260000 },
+    ]);
+    // +30 % au total sur 6 ans
+    expect(tl.summary).toContain("+30 % depuis 2019");
+    expect(tl.summary).toContain("/an");
+  });
+
+  it("aucune vente passée → un seul point, pas de résumé", () => {
+    const tl = buildSaleTimeline([], 260000, new Date("2025-06-01"));
+    expect(tl.nodes).toEqual([{ year: 2025, price: 260000 }]);
+    expect(tl.summary).toBeNull();
   });
 });

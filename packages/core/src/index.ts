@@ -6,7 +6,8 @@ export { isSelogerListingPage, parseSeloger, parseSelogerHtml } from "./extracti
 export { parseBienici } from "./extraction/bienici";
 export { isCityaListingPage, parseCitya } from "./extraction/citya";
 export { geocode, correctedLocation } from "./enrichment/geocode";
-export { parseDvfCsv, computeMarketStats, fetchCommuneSales, DVF_YEARS, haversineM } from "./enrichment/dvf";
+export { parseDvfCsv, computeMarketStats, fetchCommuneSales, DVF_YEARS, haversineM, propertySaleHistory, buildSaleTimeline } from "./enrichment/dvf";
+export type { SaleTimeline } from "./enrichment/dvf";
 export { fetchRisks } from "./enrichment/risks";
 export type { FetchRisksOptions } from "./enrichment/risks";
 export { fetchCommuneInfo, citycodeFromLatLon } from "./enrichment/commune";

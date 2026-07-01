@@ -1,15 +1,20 @@
 import { useEffect, useState } from "react";
 import {
+  buildSaleTimeline,
   citycodeFromLatLon,
   computeMarketStats,
   fetchCommuneSales,
+  propertySaleHistory,
   type Listing,
   type MarketStats,
   type ResolvedAddress,
+  type SaleTimeline,
 } from "@empir/core";
 
 export interface UseMarket {
   market: MarketStats | null;
+  /** Historique de vente du bien (frise : ventes passées + prix affiché). */
+  timeline: SaleTimeline | null;
   loading: boolean;
 }
 
@@ -27,6 +32,7 @@ export function useMarket(
   resolvedAddress: ResolvedAddress | undefined,
 ): UseMarket {
   const [market, setMarket] = useState<MarketStats | null>(null);
+  const [timeline, setTimeline] = useState<SaleTimeline | null>(null);
   const [loading, setLoading] = useState(false);
 
   const type = listing?.propertyType;
@@ -37,6 +43,7 @@ export function useMarket(
     // DVF ne couvre que maisons/appartements (pas les immeubles), et il faut un point.
     if (!listing || (type !== "Appartement" && type !== "Maison") || !lat || !lon) {
       setMarket(null);
+      setTimeline(null);
       setLoading(false);
       return;
     }
@@ -46,14 +53,31 @@ export function useMarket(
       try {
         const citycode = await citycodeFromLatLon(lat, lon);
         if (!citycode) {
-          if (!cancelled) setMarket(null);
+          if (!cancelled) {
+            setMarket(null);
+            setTimeline(null);
+          }
           return;
         }
         const sales = await fetchCommuneSales(citycode);
         const stats = computeMarketStats(sales, { lat, lon }, type, { surface: listing.surface });
-        if (!cancelled) setMarket(stats);
+        // Historique du bien : ventes passées à cette adresse + prix affiché aujourd'hui.
+        const history = propertySaleHistory(sales, {
+          address: resolvedAddress?.address,
+          lat,
+          lon,
+          surface: listing.surface,
+        });
+        const tl = buildSaleTimeline(history, listing.price);
+        if (!cancelled) {
+          setMarket(stats);
+          setTimeline(tl);
+        }
       } catch {
-        if (!cancelled) setMarket(null);
+        if (!cancelled) {
+          setMarket(null);
+          setTimeline(null);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -61,7 +85,7 @@ export function useMarket(
     return () => {
       cancelled = true;
     };
-  }, [listing, type, lat, lon]);
+  }, [listing, type, lat, lon, resolvedAddress?.address]);
 
-  return { market, loading };
+  return { market, timeline, loading };
 }

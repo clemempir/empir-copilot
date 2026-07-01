@@ -85,6 +85,81 @@ export function parseDvfCsv(csv: string): DvfSale[] {
   return sales;
 }
 
+// ── Historique de vente du bien ────────────────────────────────────────────
+
+export interface SaleTimeline {
+  /** Points de la frise : ventes passées + prix affiché aujourd'hui. */
+  nodes: { year: number; price: number }[];
+  /** Résumé d'évolution, ex. « +22 % depuis 2021 · +4 %/an » (null si < 2 points). */
+  summary: string | null;
+}
+
+/** Normalise une rue pour comparer (minuscules, sans accents, sans code postal/ville). */
+function normStreet(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/\b\d{5}\b.*$/, "") // retire « 40500 Saint-Sever » en fin
+    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Ventes DVF passées DU bien : même rue+numéro (sinon proximité ≤ 20 m), et
+ * surface proche (±20 %) pour rester sur le même logement dans un immeuble.
+ * Triées par date croissante.
+ */
+export function propertySaleHistory(
+  sales: DvfSale[],
+  target: { address?: string; lat: number; lon: number; surface?: number },
+): DvfSale[] {
+  const street = target.address ? normStreet(target.address) : "";
+  let matches = street ? sales.filter((s) => normStreet(s.address) === street) : [];
+  if (!matches.length) {
+    matches = sales.filter((s) => haversineM(target.lat, target.lon, s.lat, s.lon) <= 20);
+  }
+  if (target.surface != null && target.surface > 0) {
+    const tol = 0.2 * target.surface;
+    const bySurface = matches.filter((s) => Math.abs(s.surface - target.surface!) <= tol);
+    if (bySurface.length) matches = bySurface;
+  }
+  return matches.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Frise = ventes passées + prix affiché aujourd'hui, avec % d'évolution. */
+export function buildSaleTimeline(
+  history: DvfSale[],
+  askingPrice: number,
+  now: Date = new Date(),
+): SaleTimeline {
+  // Une vente par année (la plus récente de l'année l'emporte — history triée asc).
+  const byYear = new Map<number, number>();
+  for (const s of history) {
+    const y = new Date(s.date).getFullYear();
+    if (Number.isFinite(y)) byYear.set(y, s.price);
+  }
+  const nodes = [...byYear.entries()]
+    .map(([year, price]) => ({ year, price }))
+    .sort((a, b) => a.year - b.year);
+  const nowYear = now.getFullYear();
+  if (askingPrice > 0 && !byYear.has(nowYear)) nodes.push({ year: nowYear, price: askingPrice });
+
+  let summary: string | null = null;
+  if (nodes.length >= 2) {
+    const first = nodes[0]!;
+    const last = nodes[nodes.length - 1]!;
+    const years = Math.max(1, last.year - first.year);
+    const totalPct = Math.round(((last.price - first.price) / first.price) * 100);
+    const annualPct = Math.round((Math.pow(last.price / first.price, 1 / years) - 1) * 1000) / 10;
+    const sign = (n: number) => (n >= 0 ? "+" : "−");
+    const annualStr = Math.abs(annualPct).toString().replace(".", ",");
+    summary = `${sign(totalPct)}${Math.abs(totalPct)} % depuis ${first.year} · ${sign(annualPct)}${annualStr} %/an`;
+  }
+  return { nodes, summary };
+}
+
 const RADII_M = [500, 1000, 2000];
 const MIN_SAMPLE = 10;
 export const DVF_YEARS = [2023, 2024, 2025]; // fenêtre geo-dvf : 2021-2025 vérifiée 2026-06-10
