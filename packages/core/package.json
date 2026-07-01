@@ -9,6 +9,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:corpus": "CORPUS=1 vitest run src/resolver/__corpus.live.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {},

@@ -51,7 +51,8 @@ type ResolveFlag =
   | "dpe-absent"
   | "conflict"
   | "low-margin"
-  | "lot-in-building";
+  | "lot-in-building"
+  | "dpe-fingerprint";
 
 type ResolveStatus = "confirmed" | "probable" | "unresolved";
 
@@ -180,7 +181,7 @@ function buildCacheKey(input: ResolverInput): string {
     : "_";
   return [
     // Version d'algo : bumper à chaque changement de logique pour invalider le cache.
-    "v6-conso-tol",
+    "v7-fingerprint",
     input.postalCode,
     bucket(input.surface, 2),
     bucket(input.dpeKwhM2, 20),
@@ -543,6 +544,8 @@ const GEO_DECIDE_M = 25;
 const GEO_ISOLATED_M = 100;
 const DISK_DEFAULT_R = 300;
 const LOT_BUILDING_RADIUS = 80;
+const CONSO_EXACT = 0.5;
+const CONSO_GAP = 0.5;
 const MARGIN_CONFIRM = 1.5;
 const MARGIN_PROBABLE = 1.2;
 const ACC_K = 3;
@@ -585,8 +588,13 @@ async function resolveAddress(
   const addresses = groupByAddress(scored);
   let ranked = decide(input, addresses, dist, precise, 5);
 
-  // Repli « lot dans immeuble » (cf. index.ts §5bis) — marqueur PRÉCIS requis
-  // (sur un disque, la distance au centroïde n'a aucun sens).
+  // Repli « empreinte DPE » (cf. index.ts §5bis) — conso exacte unique.
+  if (ranked[0]?.status === "unresolved") {
+    const fp = dpeFingerprintCandidate(input, certs, dist);
+    if (fp) ranked = mergeLotCandidates([fp], ranked, 5);
+  }
+
+  // Repli « lot dans immeuble » (cf. index.ts §5ter) — marqueur PRÉCIS requis.
   if (precise && ranked[0]?.status === "unresolved") {
     const lots = lotInBuildingCandidates(input, certs, dist, 5);
     if (lots.length) ranked = mergeLotCandidates(lots, ranked, 5);
@@ -677,6 +685,70 @@ function coherence(input: ResolverInput, cert: AdemeCert): Coherence {
 
 function clamp01(x: number): number {
   return Math.max(0, Math.min(1, x));
+}
+
+// ── Repli « empreinte DPE » (conso exacte unique, cf. index.ts) ────────────
+
+function dpeFingerprintCandidate(
+  input: ResolverInput,
+  certs: AdemeCert[],
+  dist: Map<AdemeCert, number>,
+): ResolvedAddress | null {
+  if (input.dpeKwhM2 == null || input.surface == null) return null;
+  const target = input.dpeKwhM2;
+  const radius = input.geo ? (input.geo.radiusM ?? DISK_DEFAULT_R) : Infinity;
+
+  const bestByAddr = new Map<string, { cert: AdemeCert; dConso: number }>();
+  for (const c of certs) {
+    if (c.dpeKwhM2 == null) continue;
+    if (input.geo) {
+      const d = dist.get(c);
+      if (d == null || d > radius) continue;
+    }
+    if (typeCompatible(input, c) === false) continue;
+    if (input.dpeClass && c.dpeClass && c.dpeClass !== input.dpeClass) continue;
+    if (Math.abs(c.surface - input.surface) > Math.abs(input.surface) * 0.15) continue;
+    const dConso = Math.abs(c.dpeKwhM2 - target);
+    const key = addressKey(c);
+    const cur = bestByAddr.get(key);
+    if (!cur || dConso < cur.dConso) bestByAddr.set(key, { cert: c, dConso });
+  }
+
+  const ranked = [...bestByAddr.values()].sort((a, b) => a.dConso - b.dConso);
+  const best = ranked[0];
+  if (!best || best.dConso > CONSO_EXACT) return null;
+  if (ranked[1] && ranked[1].dConso - best.dConso < CONSO_GAP) return null;
+
+  const c = best.cert;
+  const d = dist.get(c);
+  return {
+    address: c.address,
+    lat: c.lat ?? 0,
+    lon: c.lon ?? 0,
+    ademeCertId: c.certId,
+    confidence: 72,
+    status: "probable",
+    resolved: false,
+    distanceM: d != null ? Math.round(d) : undefined,
+    flags: ["dpe-fingerprint"],
+    matchBreakdown: [
+      {
+        criterion: "empreinte-conso",
+        matched: true,
+        similarity: 1,
+        expected: target,
+        actual: c.dpeKwhM2,
+        factors: [
+          { criterion: "dpeKwhM2", similarity: 1, expected: target, actual: c.dpeKwhM2 },
+          { criterion: "surface", similarity: 1, expected: input.surface, actual: c.surface },
+        ],
+      },
+    ],
+    verifiedDpe:
+      c.dpeClass && c.dpeKwhM2 != null && c.gesKgCO2M2 != null
+        ? { class: c.dpeClass, kwhM2: c.dpeKwhM2, gesKgCO2M2: c.gesKgCO2M2 }
+        : undefined,
+  };
 }
 
 // ── Repli « lot dans immeuble » (cf. index.ts) ─────────────────────────────

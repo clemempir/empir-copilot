@@ -35,6 +35,10 @@ const GEO_ISOLATED_M = 100;
 const DISK_DEFAULT_R = 300;
 /** Rayon « échelle parcelle » pour rattacher un lot à un DPE d'immeuble (m). */
 const LOT_BUILDING_RADIUS = 80;
+/** Empreinte DPE : fenêtre d'arrondi SeLoger sur la conso (kWh). */
+const CONSO_EXACT = 0.5;
+/** Empreinte DPE : le meilleur match doit se détacher du 2e d'au moins (kWh). */
+const CONSO_GAP = 0.5;
 
 /** Marge top1/top2 pour un statut « confirmed ». */
 const MARGIN_CONFIRM = 1.5;
@@ -120,12 +124,19 @@ export async function resolveAddress(
   // ── 5. Décision ──────────────────────────────────────────────────────────
   let ranked = decide(input, addresses, dist, precise, limit);
 
-  // ── 5bis. Repli « lot dans immeuble » ────────────────────────────────────
-  // Un appartement dont le lot n'a pas de DPE propre : si la résolution échoue,
-  // on rattache le bien au DPE d'IMMEUBLE concordant le plus proche (le lot vit
-  // dans ce bâtiment). Statut « probable » — jamais confirmé (inférence).
-  // Exige un marqueur PRÉCIS : sur un disque de floutage, la distance est
-  // mesurée au centroïde (sans rapport avec le bâtiment) → aucun sens.
+  // ── 5bis. Repli « empreinte DPE » ─────────────────────────────────────────
+  // La conso est la vraie valeur du DPE (arrondie à l'entier par SeLoger). Si un
+  // SEUL cert matche la conso à la précision d'arrondi (et se détache du 2e),
+  // c'est LE certificat de l'annonce — même sans marqueur précis.
+  if (ranked[0]?.status === "unresolved") {
+    const fp = dpeFingerprintCandidate(input, certs, dist);
+    if (fp) ranked = mergeLotCandidates([fp], ranked, limit);
+  }
+
+  // ── 5ter. Repli « lot dans immeuble » ─────────────────────────────────────
+  // Un appartement dont le lot n'a pas de DPE propre : on rattache le bien au
+  // DPE d'IMMEUBLE concordant le plus proche. Statut « probable ». Exige un
+  // marqueur PRÉCIS (sur un disque, la distance au centroïde n'a aucun sens).
   if (precise && ranked[0]?.status === "unresolved") {
     const lots = lotInBuildingCandidates(input, certs, dist, limit);
     if (lots.length) ranked = mergeLotCandidates(lots, ranked, limit);
@@ -233,6 +244,79 @@ function coherence(input: ResolverInput, cert: AdemeCertificate): Coherence {
 
 function clamp01(x: number): number {
   return Math.max(0, Math.min(1, x));
+}
+
+// ── Repli « empreinte DPE » (conso exacte unique) ──────────────────────────
+
+/**
+ * Empreinte DPE : la conso (kWh) est la vraie valeur du certificat, arrondie à
+ * l'entier par l'annonce. Si UN SEUL cert de la commune (type/classe compatibles,
+ * surface plausible, dans le rayon géo) matche la conso à la précision d'arrondi
+ * (±0.5) ET se détache nettement du 2e, c'est le certificat de l'annonce.
+ * Retourne ce candidat en « probable » (identité DPE quasi-certaine, mais sans
+ * corroboration d'un marqueur précis), sinon `null`.
+ */
+function dpeFingerprintCandidate(
+  input: ResolverInput,
+  certs: AdemeCertificate[],
+  dist: Map<AdemeCertificate, number>,
+): ResolvedAddress | null {
+  if (input.dpeKwhM2 == null || input.surface == null) return null;
+  const target = input.dpeKwhM2;
+  const radius = input.geo ? (input.geo.radiusM ?? DISK_DEFAULT_R) : Infinity;
+
+  // Meilleur écart conso par ADRESSE (deux DPE d'un même bien ne concurrencent pas).
+  const bestByAddr = new Map<string, { cert: AdemeCertificate; dConso: number }>();
+  for (const c of certs) {
+    if (c.dpeKwhM2 == null) continue;
+    if (input.geo) {
+      const d = dist.get(c);
+      if (d == null || d > radius) continue;
+    }
+    if (typeCompatible(input, c) === false) continue;
+    if (input.dpeClass && c.dpeClass && c.dpeClass !== input.dpeClass) continue;
+    if (Math.abs(c.surface - input.surface) > Math.abs(input.surface) * 0.15) continue;
+    const dConso = Math.abs(c.dpeKwhM2 - target);
+    const key = addressKey(c);
+    const cur = bestByAddr.get(key);
+    if (!cur || dConso < cur.dConso) bestByAddr.set(key, { cert: c, dConso });
+  }
+
+  const ranked = [...bestByAddr.values()].sort((a, b) => a.dConso - b.dConso);
+  const best = ranked[0];
+  if (!best || best.dConso > CONSO_EXACT) return null; // pas de match exact
+  if (ranked[1] && ranked[1].dConso - best.dConso < CONSO_GAP) return null; // pas unique
+
+  const c = best.cert;
+  const d = dist.get(c);
+  return {
+    address: c.address,
+    lat: c.lat ?? 0,
+    lon: c.lon ?? 0,
+    ademeCertId: c.certId,
+    confidence: 72,
+    status: "probable",
+    resolved: false,
+    distanceM: d != null ? Math.round(d) : undefined,
+    flags: ["dpe-fingerprint"],
+    matchBreakdown: [
+      {
+        criterion: "empreinte-conso",
+        matched: true,
+        similarity: 1,
+        expected: target,
+        actual: c.dpeKwhM2,
+        factors: [
+          { criterion: "dpeKwhM2", similarity: 1, expected: target, actual: c.dpeKwhM2 },
+          { criterion: "surface", similarity: 1, expected: input.surface, actual: c.surface },
+        ],
+      },
+    ],
+    verifiedDpe:
+      c.dpeClass && c.dpeKwhM2 != null && c.gesKgCO2M2 != null
+        ? { class: c.dpeClass, kwhM2: c.dpeKwhM2, gesKgCO2M2: c.gesKgCO2M2 }
+        : undefined,
+  };
 }
 
 // ── Repli « lot dans immeuble » ────────────────────────────────────────────

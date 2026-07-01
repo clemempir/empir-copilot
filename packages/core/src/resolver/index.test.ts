@@ -171,6 +171,39 @@ describe("resolveAddress — marqueur géo précis (gate)", () => {
   });
 });
 
+describe("resolveAddress — empreinte DPE (conso exacte unique)", () => {
+  it("conso exacte UNIQUE → probable dpe-fingerprint (départage deux sosies)", async () => {
+    // A et B se ressemblent (65 m² E, conso à ±3 % → égalité en primaire, unresolved),
+    // mais seule A matche la conso à la précision d'arrondi (328 vs 320).
+    const rows = [
+      row({ id: "A", address: "3bis Rue Test", surface: 65, type: "appartement", dpe: "E", kwh: 328 }),
+      row({ id: "B", address: "9 Rue Sosie", surface: 65, type: "appartement", dpe: "E", kwh: 320 }),
+      ...noise(6),
+    ];
+    const res = await resolveAddress(
+      { postalCode: "40000", surface: 65, dpeClass: "E", dpeKwhM2: 328, propertyType: "Appartement" },
+      { fetchFn: makeFetch(rows) },
+    );
+    expect(res[0]!.status).toBe("probable");
+    expect(res[0]!.flags).toContain("dpe-fingerprint");
+    expect(res[0]!.ademeCertId).toBe("A");
+  });
+
+  it("deux certs à la MÊME conso exacte → ambigu, pas d'empreinte (unresolved)", async () => {
+    const rows = [
+      row({ id: "A", address: "1 Rue Jumelle", surface: 65, type: "appartement", dpe: "E", kwh: 328 }),
+      row({ id: "B", address: "2 Rue Jumelle", surface: 65, type: "appartement", dpe: "E", kwh: 328 }),
+      ...noise(6),
+    ];
+    const res = await resolveAddress(
+      { postalCode: "40000", surface: 65, dpeClass: "E", dpeKwhM2: 328, propertyType: "Appartement" },
+      { fetchFn: makeFetch(rows) },
+    );
+    expect(res.some((r) => r.flags?.includes("dpe-fingerprint"))).toBe(false);
+    expect(res[0]!.status).toBe("unresolved");
+  });
+});
+
 describe("resolveAddress — lot dans immeuble (DPE de lot absent)", () => {
   it("appartement E sans DPE de lot → rattaché à l'immeuble E, plausibilité surface/lot", async () => {
     const rows = [
