@@ -9,7 +9,7 @@ export { geocode, correctedLocation } from "./enrichment/geocode";
 export { parseDvfCsv, computeMarketStats, fetchCommuneSales, DVF_YEARS, haversineM } from "./enrichment/dvf";
 export { fetchRisks } from "./enrichment/risks";
 export type { FetchRisksOptions } from "./enrichment/risks";
-export { fetchCommuneInfo } from "./enrichment/commune";
+export { fetchCommuneInfo, citycodeFromLatLon } from "./enrichment/commune";
 export type { FetchCommuneInfoOptions } from "./enrichment/commune";
 export { fetchPluZone } from "./enrichment/plu";
 export type { FetchPluZoneOptions } from "./enrichment/plu";

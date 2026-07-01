@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { browser } from "wxt/browser";
-import type { Listing, QuickAnalysis } from "@empir/core";
+import { buildQuickAnalysis, type Listing, type QuickAnalysis } from "@empir/core";
 import type { TabState } from "@/lib/messages";
 import { useAuth } from "@/lib/hooks/use-auth";
 import { useAnalyze } from "@/lib/hooks/use-analyze";
+import { useMarket } from "@/lib/hooks/use-market";
 import { useSavedListings } from "@/lib/hooks/use-saved-listings";
 import { useNotifications } from "@/lib/hooks/use-notifications";
 import { useProfile } from "@/lib/hooks/use-profile";
@@ -118,22 +119,22 @@ export default function App() {
     return "idle";
   }, [analyze.loading, analyze.result]);
 
-  // Synthetic QuickAnalysis: V1 le score prix viendra plus tard depuis Edge
-  // Function / core ; pour l'instant on affiche un score neutre 0-100 dérivé
-  // de l'écart de prix annonce vs estimation simple (placeholder).
-  const quick: QuickAnalysis = useMemo(
-    () => ({
-      listingPricePerM2:
-        tabState.listing?.surface && tabState.listing.surface > 0
+  // Prix du marché du quartier (ventes DVF réelles autour de l'adresse résolue),
+  // puis score prix = position de l'annonce vs médiane comparable.
+  const market = useMarket(tabState.listing, analyze.result?.resolvedAddress);
+  const quick: QuickAnalysis = useMemo(() => {
+    if (!tabState.listing) {
+      return { listingPricePerM2: null, marketGapPct: null, market: null, score: null, scoreLabel: "—" };
+    }
+    if (market.loading) {
+      const ppm2 =
+        tabState.listing.surface && tabState.listing.surface > 0
           ? Math.round(tabState.listing.price / tabState.listing.surface)
-          : null,
-      marketGapPct: null,
-      market: null,
-      score: null,
-      scoreLabel: "Calcul à venir",
-    }),
-    [tabState.listing],
-  );
+          : null;
+      return { listingPricePerM2: ppm2, marketGapPct: null, market: null, score: null, scoreLabel: "Calcul…" };
+    }
+    return buildQuickAnalysis(tabState.listing, market.market);
+  }, [tabState.listing, market.market, market.loading]);
 
   const usage = analyze.result?.usage ?? {
     used: profile.profile?.plan === "unlimited" ? 0 : 0,

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { fetchCommuneInfo } from "./commune";
+import { citycodeFromLatLon, fetchCommuneInfo } from "./commune";
 
 // ─── Fixture recorded from real API response (2026-06-11) ─────────────────────
 
@@ -66,5 +66,25 @@ describe("fetchCommuneInfo", () => {
     await expect(
       fetchCommuneInfo("97411", { fetchFn: mockFetch as unknown as typeof fetch }),
     ).rejects.toThrow("réponse incomplète pour 97411");
+  });
+});
+
+describe("citycodeFromLatLon", () => {
+  it("renvoie le code INSEE de la commune au point donné", async () => {
+    const mockFetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => [{ code: "46042" }], // Cahors
+    });
+    const code = await citycodeFromLatLon(44.4485, 1.4405, {
+      fetchFn: mockFetch as unknown as typeof fetch,
+    });
+    expect(code).toBe("46042");
+    expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining("lat=44.4485&lon=1.4405"));
+  });
+
+  it("aucune commune trouvée → null", async () => {
+    const mockFetch = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => [] });
+    const code = await citycodeFromLatLon(0, 0, { fetchFn: mockFetch as unknown as typeof fetch });
+    expect(code).toBeNull();
   });
 });
