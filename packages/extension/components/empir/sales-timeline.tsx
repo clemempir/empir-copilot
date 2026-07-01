@@ -27,8 +27,8 @@ export function SalesTimeline({ nodes, className }: SalesTimelineProps) {
   const sorted = [...nodes].sort((a, b) => a.year - b.year);
   return (
     <div className={cn("relative flex items-stretch gap-1", className)}>
-      {/* Ligne de fond */}
-      <div className="absolute left-3 right-3 top-[18px] h-px bg-gradient-to-r from-empir-primary/30 via-empir-accent/40 to-empir-primary/30" />
+      {/* Ligne de fond — passe par le centre des points (dot 12px → centre à 6px) */}
+      <div className="absolute left-3 right-3 top-[5px] h-px bg-gradient-to-r from-empir-primary/30 via-empir-accent/40 to-empir-primary/30" />
       {sorted.map((n, idx) => (
         <div key={`${n.year}-${idx}`} className="relative flex flex-1 flex-col items-center">
           <span
