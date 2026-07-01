@@ -85,6 +85,14 @@ const CASES: Case[] = [
     },
     expect: { status: "probable", addressIncludes: "Muguet" },
   },
+  {
+    name: "Saint-Médard — maison 98 m² SANS DPE, marqueur précis → bonne adresse mais probable (pas de DPE pour corroborer) (SeLoger 271492753)",
+    input: {
+      postalCode: "40000", surface: 98, landSurface: 457, propertyType: "Maison",
+      geo: { lat: 43.89729, lon: -0.48754, precise: true },
+    },
+    expect: { status: "probable", addressIncludes: "Saint-médard" },
+  },
   // ── NÉGATIFS : doivent RESTER unresolved (anti-faux-positif des canaux) ──────
   {
     name: "NÉGATIF Argenté — appart 90 B/43 GES B/7, cert conso-proche fait 63 m² GES A (surface >1,4×), pas le même logement (SeLoger 271875149)",
