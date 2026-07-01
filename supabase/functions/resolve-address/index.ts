@@ -181,7 +181,7 @@ function buildCacheKey(input: ResolverInput): string {
     : "_";
   return [
     // Version d'algo : bumper à chaque changement de logique pour invalider le cache.
-    "v8-fp-hardened",
+    "v9-surface-conflict",
     input.postalCode,
     bucket(input.surface, 2),
     bucket(input.dpeKwhM2, 20),
@@ -646,6 +646,7 @@ type Coherence = "concordant" | "absent" | "conflict";
 
 const COH_CONSO_TOL = 0.25;
 const COH_GES_TOL = 0.35;
+const SURFACE_CONFLICT_RATIO = 2;
 
 function within(actual: number, target: number, tol: number): boolean {
   return Math.abs(actual - target) <= Math.abs(target) * tol;
@@ -666,6 +667,11 @@ function typeCompatible(input: ResolverInput, cert: AdemeCert): boolean | null {
  */
 function coherence(input: ResolverInput, cert: AdemeCert): Coherence {
   if (typeCompatible(input, cert) === false) return "conflict";
+  // Échelle de bien radicalement différente (immeuble entier vs lot) → conflit.
+  if (input.surface != null && cert.surface > 0) {
+    const ratio = Math.max(input.surface, cert.surface) / Math.min(input.surface, cert.surface);
+    if (ratio > SURFACE_CONFLICT_RATIO) return "conflict";
+  }
 
   const signals: boolean[] = [];
   if (input.dpeKwhM2 != null && cert.dpeKwhM2 != null) {

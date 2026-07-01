@@ -245,6 +245,20 @@ describe("resolveAddress — lot dans immeuble (DPE de lot absent)", () => {
     expect(res.some((r) => r.ademeCertId === "IMM128" && r.flags?.includes("lot-in-building"))).toBe(false);
   });
 
+  it("immeuble 500 m² vs studio 19 m² même DPE → conflit de surface (pas de faux confirmed)", async () => {
+    // Écart de surface grossier (26×) : un immeuble ne se confirme pas comme un
+    // studio qui partage sa classe/conso DPE.
+    const rows = [
+      row({ id: "STUDIO", address: "10 Rue Studio", geo: "43.888,-0.505", surface: 19, type: "appartement", dpe: "F", kwh: 388, gesClass: "D" }),
+      ...noise(6),
+    ];
+    const res = await resolveAddress(
+      { postalCode: "40000", surface: 500, dpeClass: "F", dpeKwhM2: 388, gesClass: "D", propertyType: "Immeuble", geo: { lat: 43.888, lon: -0.505, radiusM: 779 } },
+      { fetchFn: makeFetch(rows) },
+    );
+    expect(res[0]!.status).toBe("unresolved");
+  });
+
   it("géo DISQUE (floutage, non précis) → le canal lot-in-building ne se déclenche PAS", async () => {
     // Un immeuble E est proche du centroïde, mais la géo est un disque → la
     // distance au centroïde n'a aucun sens, on ne doit pas inventer un rattachement.

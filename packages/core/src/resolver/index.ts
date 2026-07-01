@@ -200,6 +200,8 @@ type Coherence = "concordant" | "absent" | "conflict";
 /** Tolérances « cohérence » (≈ tolérance max des sim) pour les valeurs chiffrées. */
 const COH_CONSO_TOL = 0.25;
 const COH_GES_TOL = 0.35;
+/** Écart de surface au-delà duquel c'est un bien d'une AUTRE échelle (immeuble ≠ lot). */
+const SURFACE_CONFLICT_RATIO = 2;
 
 function within(actual: number, target: number, tol: number): boolean {
   return Math.abs(actual - target) <= Math.abs(target) * tol;
@@ -220,12 +222,22 @@ function typeCompatible(input: ResolverInput, cert: AdemeCertificate): boolean |
  * (deux logements voisins partagent souvent une surface proche sans être le même
  * bien). Un type de bâtiment contradictoire (maison↔appartement) tranche seul.
  *   – absent  : rien de comparable (cert sans DPE, ou annonce sans DPE) ;
- *   – conflict: type incompatible, OU DPE/GES tous évaluables mais discordants ;
+ *   – conflict: type incompatible, écart de surface GROSSIER (immeuble ≠ lot),
+ *     OU DPE/GES tous évaluables mais discordants ;
  *   – concordant : au moins un indicateur énergie concorde.
+ *
+ * La surface n'entre en compte QUE pour un écart grossier (> 2×) : un petit
+ * écart (65 vs 63) est du bruit, mais un immeuble de 500 m² « confirmé » comme
+ * un studio de 19 m² qui partage sa classe DPE est un faux positif.
  */
 function coherence(input: ResolverInput, cert: AdemeCertificate): Coherence {
   // Type incompatible au point précis → ce n'est pas le bon bien.
   if (typeCompatible(input, cert) === false) return "conflict";
+  // Échelle de bien radicalement différente (immeuble entier vs lot) → conflit.
+  if (input.surface != null && cert.surface > 0) {
+    const ratio = Math.max(input.surface, cert.surface) / Math.min(input.surface, cert.surface);
+    if (ratio > SURFACE_CONFLICT_RATIO) return "conflict";
+  }
 
   const signals: boolean[] = [];
   if (input.dpeKwhM2 != null && cert.dpeKwhM2 != null) {

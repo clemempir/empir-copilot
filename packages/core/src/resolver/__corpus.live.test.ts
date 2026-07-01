@@ -69,7 +69,23 @@ const CASES: Case[] = [
     },
     expect: { status: "probable", addressIncludes: "Grands Pins" },
   },
+  {
+    name: "Laubaner — immeuble 370 D/225 GES B, disque (matche l'immeuble 334, SeLoger 256264245)",
+    input: {
+      postalCode: "40000", surface: 370, dpeClass: "D", dpeKwhM2: 225, gesClass: "B", gesKgCO2M2: 7,
+      propertyType: "Immeuble", geo: { lat: 43.89691, lon: -0.4916, radiusM: 995 },
+    },
+    expect: { status: "probable", addressIncludes: "Laubaner" },
+  },
   // ── NÉGATIFS : doivent RESTER unresolved (anti-faux-positif des canaux) ──────
+  {
+    name: "NÉGATIF immeuble 500 F/388 — 0 immeuble ADEME, ne pas confirmer un studio (SeLoger 267780351)",
+    input: {
+      postalCode: "40000", surface: 500, dpeClass: "F", dpeKwhM2: 388, gesClass: "D", gesKgCO2M2: 33,
+      propertyType: "Immeuble", geo: { lat: 43.88803, lon: -0.5056, radiusM: 779 },
+    },
+    expect: { status: "unresolved" },
+  },
   {
     name: "NÉGATIF Hippodrome — maison 425 m² terrain 3000, sans DPE, disque (mal géolocalisé, SeLoger 240186339)",
     input: {
