@@ -198,6 +198,27 @@ describe("resolveAddress — lot dans immeuble (DPE de lot absent)", () => {
     expect(res.some((r) => r.ademeCertId === "IMM128" && r.flags?.includes("lot-in-building"))).toBe(false);
   });
 
+  it("géo DISQUE (floutage, non précis) → le canal lot-in-building ne se déclenche PAS", async () => {
+    // Un immeuble E est proche du centroïde, mais la géo est un disque → la
+    // distance au centroïde n'a aucun sens, on ne doit pas inventer un rattachement.
+    const rows = [
+      row({ id: "M", address: "1 Rue X", geo: "43.898,-0.500", surface: 80, type: "maison", dpe: "D" }),
+      row({ id: "IMM", address: "9 Av Y", geo: "43.8981,-0.5001", surfaceImm: 550, apts: 10, type: "immeuble", dpe: "E" }),
+      ...noise(6),
+    ];
+    const res = await resolveAddress(
+      {
+        postalCode: "40000",
+        surface: 65,
+        dpeClass: "E",
+        propertyType: "Appartement",
+        geo: { lat: 43.898, lon: -0.5001, radiusM: 780 }, // disque, precise absent
+      },
+      { fetchFn: makeFetch(rows) },
+    );
+    expect(res.some((r) => r.flags?.includes("lot-in-building"))).toBe(false);
+  });
+
   it("appartement sans immeuble concordant → reste unresolved (pas d'invention)", async () => {
     const rows = [
       row({ id: "M", address: "1 Rue X", geo: "43.89587,-0.50435", surface: 63, type: "maison", dpe: "C" }),

@@ -124,7 +124,9 @@ export async function resolveAddress(
   // Un appartement dont le lot n'a pas de DPE propre : si la résolution échoue,
   // on rattache le bien au DPE d'IMMEUBLE concordant le plus proche (le lot vit
   // dans ce bâtiment). Statut « probable » — jamais confirmé (inférence).
-  if (ranked[0]?.status === "unresolved") {
+  // Exige un marqueur PRÉCIS : sur un disque de floutage, la distance est
+  // mesurée au centroïde (sans rapport avec le bâtiment) → aucun sens.
+  if (precise && ranked[0]?.status === "unresolved") {
     const lots = lotInBuildingCandidates(input, certs, dist, limit);
     if (lots.length) ranked = mergeLotCandidates(lots, ranked, limit);
   }

@@ -585,8 +585,9 @@ async function resolveAddress(
   const addresses = groupByAddress(scored);
   let ranked = decide(input, addresses, dist, precise, 5);
 
-  // Repli « lot dans immeuble » (cf. index.ts §5bis)
-  if (ranked[0]?.status === "unresolved") {
+  // Repli « lot dans immeuble » (cf. index.ts §5bis) — marqueur PRÉCIS requis
+  // (sur un disque, la distance au centroïde n'a aucun sens).
+  if (precise && ranked[0]?.status === "unresolved") {
     const lots = lotInBuildingCandidates(input, certs, dist, 5);
     if (lots.length) ranked = mergeLotCandidates(lots, ranked, 5);
   }
