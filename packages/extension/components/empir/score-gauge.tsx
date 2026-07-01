@@ -6,7 +6,7 @@ export interface ScoreGaugeProps {
   score: number | null;
   /** Diamètre en px (défaut 48 — taille hero du design). */
   size?: number;
-  /** Épaisseur du trait (défaut size/6). */
+  /** Épaisseur du trait (défaut ≈ size×0.095 — anneau fin, cf. maquette 8/84). */
   stroke?: number;
   className?: string;
 }
@@ -14,7 +14,7 @@ export interface ScoreGaugeProps {
 const GRAD_ID = "empir-score-grad";
 
 export function ScoreGauge({ score, size = 48, stroke, className }: ScoreGaugeProps) {
-  const s = stroke ?? Math.max(4, Math.round(size / 6));
+  const s = stroke ?? Math.max(3, size * 0.095);
   const r = (size - s) / 2;
   const c = Math.PI * 2 * r;
   const pct = score == null ? 0 : Math.max(0, Math.min(100, score)) / 100;

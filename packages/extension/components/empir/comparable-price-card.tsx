@@ -21,14 +21,6 @@ export function ComparablePriceCard({
 }: ComparablePriceCardProps) {
   const showGap = gapPct != null;
   const gapPositive = (gapPct ?? 0) >= 0;
-  const gapColor = gapPositive
-    ? "bg-empir-danger/15 text-empir-danger"
-    : "bg-empir-success/15 text-empir-success";
-  const gapLabel = showGap
-    ? `${gapPositive ? "+" : "−"}${Math.abs(Math.round(gapPct!))}% ${
-        gapPositive ? "au-dessus" : "sous"
-      } le marché`
-    : null;
 
   return (
     <div
@@ -49,14 +41,25 @@ export function ComparablePriceCard({
             <span className="text-[11px] text-empir-muted-2">€/m²</span>
           </div>
         </div>
-        {gapLabel && (
+        {showGap && (
           <span
             className={cn(
-              "self-start rounded-empir-pill px-2.5 py-1 text-[10.5px] font-medium",
-              gapColor,
+              "mt-0.5 inline-flex shrink-0 items-baseline gap-[5px] rounded-[8px] px-[9px] py-1",
+              gapPositive ? "bg-empir-danger/15" : "bg-empir-success/15",
             )}
           >
-            {gapLabel}
+            <span
+              className={cn(
+                "text-[12px] font-bold tabular-nums",
+                gapPositive ? "text-empir-danger" : "text-empir-success",
+              )}
+            >
+              {gapPositive ? "+" : "−"}
+              {Math.abs(Math.round(gapPct!))}%
+            </span>
+            <span className={cn("text-[9px]", gapPositive ? "text-empir-danger/80" : "text-empir-success/80")}>
+              {gapPositive ? "au-dessus" : "sous"} le marché
+            </span>
           </span>
         )}
       </div>
