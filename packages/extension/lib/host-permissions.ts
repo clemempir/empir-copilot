@@ -18,8 +18,9 @@ export const HOST_PERMISSIONS = [
   ...LISTING_MATCHES,
   // BAN / Géoplateforme — geocoding
   "https://api-adresse.data.gouv.fr/*",
-  // DVF — ventes immobilières
+  // DVF — ventes immobilières (files.data.gouv.fr redirige 302 vers le bucket OVH)
   "https://files.data.gouv.fr/*",
+  "https://geo-dvf.s3.sbg.io.cloud.ovh.net/*",
   // ADEME — base DPE publique
   "https://data.ademe.fr/*",
   // IGN apicarto — cadastre + PLU
