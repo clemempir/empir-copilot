@@ -52,7 +52,8 @@ type ResolveFlag =
   | "conflict"
   | "low-margin"
   | "lot-in-building"
-  | "dpe-fingerprint";
+  | "dpe-fingerprint"
+  | "dpe-date-fingerprint";
 
 type ResolveStatus = "confirmed" | "probable" | "unresolved";
 
@@ -181,7 +182,7 @@ function buildCacheKey(input: ResolverInput): string {
     : "_";
   return [
     // Version d'algo : bumper à chaque changement de logique pour invalider le cache.
-    "v14-input-sanitize",
+    "v15-date-fingerprint",
     input.postalCode,
     bucket(input.surface, 2),
     bucket(input.dpeKwhM2, 20),
@@ -616,6 +617,12 @@ async function resolveAddress(
     if (fp) ranked = promoteCandidates([fp], ranked, 5);
   }
 
+  // Repli « empreinte date DPE » (cf. index.ts §5bis-b) — hors gate géo.
+  if (ranked[0]?.status === "unresolved") {
+    const df = dpeDateFingerprintCandidate(input, certs, dist);
+    if (df) ranked = promoteCandidates([df], ranked, 5);
+  }
+
   // Repli « lot dans immeuble » (cf. index.ts §5ter) — marqueur PRÉCIS requis.
   if (precise && ranked[0]?.status === "unresolved") {
     const lots = lotInBuildingCandidates(input, certs, dist, 5);
@@ -800,6 +807,75 @@ function dpeFingerprintCandidate(
         factors: [
           { criterion: "dpeKwhM2", similarity: 1, expected: target, actual: c.dpeKwhM2 },
           { criterion: "surface", similarity: 1, expected: input.surface, actual: c.surface },
+        ],
+      },
+    ],
+    verifiedDpe: toVerifiedDpe(c),
+  };
+}
+
+// ── Repli « empreinte date DPE » (cf. core index.ts §5bis-b) ────────────────
+function dpeDateFingerprintCandidate(
+  input: ResolverInput,
+  certs: AdemeCert[],
+  dist: Map<AdemeCert, number>,
+): ResolvedAddress | null {
+  if (!input.dpeDate) return null;
+
+  const energySignals = (c: AdemeCert): number => {
+    let n = 0;
+    if (input.dpeKwhM2 != null && c.dpeKwhM2 != null && within(c.dpeKwhM2, input.dpeKwhM2, COH_CONSO_TOL)) n++;
+    if (input.dpeClass && c.dpeClass && c.dpeClass === input.dpeClass) n++;
+    if (
+      (input.gesKgCO2M2 != null && c.gesKgCO2M2 != null && within(c.gesKgCO2M2, input.gesKgCO2M2, COH_GES_TOL)) ||
+      (input.gesClass && c.gesClass && c.gesClass === input.gesClass)
+    ) {
+      n++;
+    }
+    return n;
+  };
+
+  const bestByAddr = new Map<string, AdemeCert>();
+  for (const c of certs) {
+    if (!c.dpeDate || c.dpeDate !== input.dpeDate) continue;
+    if (typeCompatible(input, c) === false) continue;
+    if (input.dpeClass && c.dpeClass && c.dpeClass !== input.dpeClass) continue;
+    const gesSteps = letterSteps(input.gesClass, c.gesClass);
+    if (gesSteps != null && gesSteps >= GES_CONFLICT_STEPS) continue;
+    if (input.surface != null && c.surface > 0) {
+      const ratio = Math.max(input.surface, c.surface) / Math.min(input.surface, c.surface);
+      if (ratio > SURFACE_CONFLICT_RATIO) continue;
+    }
+    if (energySignals(c) < 1) continue;
+    const key = addressKey(c);
+    const cur = bestByAddr.get(key);
+    if (!cur || newer(c, cur)) bestByAddr.set(key, c);
+  }
+  if (bestByAddr.size !== 1) return null;
+
+  const c = [...bestByAddr.values()][0]!;
+  const d = dist.get(c);
+  const conf = Math.min(84, 76 + (energySignals(c) >= 2 ? 4 : 0) + (input.geo && d != null && d <= (input.geo.radiusM ?? DISK_DEFAULT_R) ? 2 : 0));
+  return {
+    address: c.address,
+    lat: c.lat ?? 0,
+    lon: c.lon ?? 0,
+    ademeCertId: c.certId,
+    confidence: conf,
+    status: "probable",
+    resolved: false,
+    distanceM: d != null ? Math.round(d) : undefined,
+    flags: ["dpe-date-fingerprint"],
+    matchBreakdown: [
+      {
+        criterion: "empreinte-date",
+        matched: true,
+        similarity: 1,
+        expected: input.dpeDate,
+        actual: c.dpeDate,
+        factors: [
+          { criterion: "dpeDate", similarity: 1, expected: input.dpeDate, actual: c.dpeDate },
+          { criterion: "dpeClass", similarity: 1, expected: input.dpeClass, actual: c.dpeClass },
         ],
       },
     ],

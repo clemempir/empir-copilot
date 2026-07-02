@@ -93,7 +93,8 @@ export type ResolveFlag =
   | "conflict" // le DPE au point contredit l'annonce
   | "low-margin" // écart insuffisant entre les 2 meilleures adresses
   | "lot-in-building" // pas de DPE de lot ; DPE d'immeuble concordant à proximité
-  | "dpe-fingerprint"; // conso exacte (à l'arrondi) unique dans la commune
+  | "dpe-fingerprint" // conso exacte (à l'arrondi) unique dans la commune
+  | "dpe-date-fingerprint"; // date de diagnostic exacte unique dans la commune (échappe au gate géo)
 
 /**
  * Statut de résolution (remplace le booléen `resolved`).

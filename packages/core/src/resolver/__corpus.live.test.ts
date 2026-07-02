@@ -93,6 +93,15 @@ const CASES: Case[] = [
     },
     expect: { status: "probable", addressIncludes: "Saint-médard" },
   },
+  {
+    name: "Chemin du Larron — maison 166 B/110 GES A/3, DISQUE FAUX (500 m à ~1,4 km du bien) : retrouvée par l'empreinte date DPE 2023-11-15 hors gate géo (Bien'ici 519553460, verdict console « fixed » 2026-07-02)",
+    input: {
+      postalCode: "40500", surface: 166, rooms: 8, dpeClass: "B", dpeKwhM2: 110,
+      gesClass: "A", gesKgCO2M2: 3, landSurface: 30775, dpeDate: "2023-11-15",
+      propertyType: "Maison", geo: { lat: 43.74296876160631, lon: -0.5542123547193814, radiusM: 500 },
+    },
+    expect: { status: "probable", addressIncludes: "Larron", flag: "dpe-date-fingerprint" },
+  },
   // ── NÉGATIFS : doivent RESTER unresolved (anti-faux-positif des canaux) ──────
   {
     name: "NÉGATIF Marsan — T1 40 C/163 : MARQUEUR PORTAIL ERRONÉ (vraie adresse 10 Av. du Marsan à ~1,9 km du disque — centré agence ?) + DPE du lot absent d'ADEME (2026-06-12 trop récent) → abstention correcte (Bien'ici 52457328, verdict console « fixed »)",

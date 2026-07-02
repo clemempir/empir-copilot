@@ -136,6 +136,14 @@ export async function resolveAddress(
     if (fp) ranked = promoteCandidates([fp], ranked, limit);
   }
 
+  // ── 5bis-b. Repli « empreinte date DPE » ──────────────────────────────────
+  // Date de diagnostic exacte unique dans la commune + ≥1 signal énergie
+  // concordant — recherche HORS gate géo (marqueurs portail parfois faux).
+  if (ranked[0]?.status === "unresolved") {
+    const df = dpeDateFingerprintCandidate(input, certs, dist);
+    if (df) ranked = promoteCandidates([df], ranked, limit);
+  }
+
   // ── 5ter. Repli « lot dans immeuble » ─────────────────────────────────────
   // Un appartement dont le lot n'a pas de DPE propre : on rattache le bien au
   // DPE d'IMMEUBLE concordant le plus proche. Statut « probable ». Exige un
@@ -387,6 +395,89 @@ function dpeFingerprintCandidate(
         factors: [
           { criterion: "dpeKwhM2", similarity: 1, expected: target, actual: c.dpeKwhM2 },
           { criterion: "surface", similarity: 1, expected: input.surface, actual: c.surface },
+        ],
+      },
+    ],
+    verifiedDpe: toVerifiedDpe(c),
+  };
+}
+
+// ── Repli « empreinte date DPE » (date de diagnostic exacte unique) ─────────
+
+/**
+ * La date d'établissement du DPE publiée par l'annonce est une quasi-clé :
+ * ~2 certificats par date dans une commune (mesuré : 40500, 761 dates, moyenne
+ * 2,06). Si UNE SEULE adresse porte un cert à cette date exacte ET que rien ne
+ * contredit (type, classe DPE, GES, échelle de surface ≤ 1,4×), c'est le
+ * certificat de l'annonce — recherché dans TOUTE la commune, HORS gate géo :
+ * les marqueurs portail sont parfois centrés ailleurs (cas réel vérifié en
+ * console : disque de 500 m à 1,4 km du bien, Bien'ici 519553460).
+ * La date seule ne suffit PAS (piège documenté : date → mauvaise maison) : on
+ * exige au moins un signal ÉNERGIE concordant en plus (conso, classe ou GES).
+ */
+function dpeDateFingerprintCandidate(
+  input: ResolverInput,
+  certs: AdemeCertificate[],
+  dist: Map<AdemeCertificate, number>,
+): ResolvedAddress | null {
+  if (!input.dpeDate) return null;
+
+  const energySignals = (c: AdemeCertificate): number => {
+    let n = 0;
+    if (input.dpeKwhM2 != null && c.dpeKwhM2 != null && within(c.dpeKwhM2, input.dpeKwhM2, COH_CONSO_TOL)) n++;
+    if (input.dpeClass && c.dpeClass && c.dpeClass === input.dpeClass) n++;
+    if (
+      (input.gesKgCO2M2 != null && c.gesKgCO2M2 != null && within(c.gesKgCO2M2, input.gesKgCO2M2, COH_GES_TOL)) ||
+      (input.gesClass && c.gesClass && c.gesClass === input.gesClass)
+    ) {
+      n++;
+    }
+    return n;
+  };
+
+  const bestByAddr = new Map<string, AdemeCertificate>();
+  for (const c of certs) {
+    if (!c.dpeDate || c.dpeDate !== input.dpeDate) continue;
+    if (typeCompatible(input, c) === false) continue;
+    if (input.dpeClass && c.dpeClass && c.dpeClass !== input.dpeClass) continue;
+    const gesSteps = letterSteps(input.gesClass, c.gesClass);
+    if (gesSteps != null && gesSteps >= GES_CONFLICT_STEPS) continue;
+    if (input.surface != null && c.surface > 0) {
+      const ratio = Math.max(input.surface, c.surface) / Math.min(input.surface, c.surface);
+      if (ratio > SURFACE_CONFLICT_RATIO) continue;
+    }
+    if (energySignals(c) < 1) continue; // la date seule ne fait pas une empreinte
+    const key = addressKey(c);
+    const cur = bestByAddr.get(key);
+    if (!cur || newer(c, cur)) bestByAddr.set(key, c);
+  }
+  if (bestByAddr.size !== 1) return null; // plusieurs adresses à cette date → ambigu
+
+  const c = [...bestByAddr.values()][0]!;
+  const d = dist.get(c);
+  // 76 base (date exacte unique + ≥1 signal énergie) ; +4 si ≥2 signaux ; +2 si
+  // le cert est en plus dans le disque géo. Plafond 84 (jamais confirmed).
+  const conf = Math.min(84, 76 + (energySignals(c) >= 2 ? 4 : 0) + (input.geo && d != null && d <= (input.geo.radiusM ?? DISK_DEFAULT_R) ? 2 : 0));
+  return {
+    address: c.address,
+    lat: c.lat ?? 0,
+    lon: c.lon ?? 0,
+    ademeCertId: c.certId,
+    confidence: conf,
+    status: "probable",
+    resolved: false,
+    distanceM: d != null ? Math.round(d) : undefined,
+    flags: ["dpe-date-fingerprint"],
+    matchBreakdown: [
+      {
+        criterion: "empreinte-date",
+        matched: true,
+        similarity: 1,
+        expected: input.dpeDate,
+        actual: c.dpeDate,
+        factors: [
+          { criterion: "dpeDate", similarity: 1, expected: input.dpeDate, actual: c.dpeDate },
+          { criterion: "dpeClass", similarity: 1, expected: input.dpeClass, actual: c.dpeClass },
         ],
       },
     ],

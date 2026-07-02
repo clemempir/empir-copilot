@@ -463,6 +463,80 @@ describe("resolveAddress — anti-faux-positif (status unresolved)", () => {
     expect(res).toEqual([]);
   });
 
+  it("empreinte date DPE : date exacte unique + classe concordante → probable, MÊME hors du disque géo", async () => {
+    // Cas réel (Bien'ici 519553460, verdict console) : le disque de 500 m est
+    // centré à ~1,4 km du bien — le gate géo exclut le bon cert. La date de
+    // diagnostic exacte (quasi-clé : ~2 certs/date/commune) + classe + GES
+    // concordants le retrouvent hors gate.
+    const rows = [
+      // Le bon cert : loin du marqueur (~2 km), date + classe + GES concordent.
+      row({
+        id: "TRUE",
+        address: "404 Chemin Larron 40500 Saint-Sever",
+        geo: "43.7300,-0.5300",
+        surface: 186,
+        type: "maison",
+        dpe: "B",
+        kwh: 100.5,
+        gesClass: "A",
+        date: "2023-11-15",
+      }),
+      // Même date mais TYPE incompatible (immeuble annoncé ≠ maison) — piège
+      // documenté : la date seule ne doit pas suffire.
+      row({
+        id: "TRAP",
+        address: "7 Rue du Piège 40500 Saint-Sever",
+        geo: "43.7310,-0.5310",
+        surface: 357,
+        type: "maison",
+        dpe: "E",
+        kwh: 285,
+        date: "2023-11-15",
+      }),
+      ...noise(6),
+    ];
+    const res = await resolveAddress(
+      {
+        postalCode: "40500",
+        surface: 166,
+        dpeClass: "B",
+        dpeKwhM2: 110,
+        gesClass: "A",
+        gesKgCO2M2: 3,
+        dpeDate: "2023-11-15",
+        propertyType: "Maison",
+        geo: { lat: 43.74296, lon: -0.55421, radiusM: 500 },
+      },
+      { fetchFn: makeFetch(rows) },
+    );
+    expect(res[0]!.address).toContain("Larron");
+    expect(res[0]!.status).toBe("probable");
+    expect(res[0]!.flags).toContain("dpe-date-fingerprint");
+    expect(res[0]!.confidence).toBeGreaterThan(75);
+  });
+
+  it("empreinte date DPE : deux adresses plausibles à la même date → ambigu, PAS de résolution", async () => {
+    const twin = (id: string, addr: string, geo: string) =>
+      row({ id, address: addr, geo, surface: 170, type: "maison", dpe: "B", gesClass: "A", date: "2023-11-15" });
+    const rows = [
+      twin("A", "1 Rue Double 40500 Saint-Sever", "43.7300,-0.5300"),
+      twin("B", "2 Rue Sosie 40500 Saint-Sever", "43.7310,-0.5310"),
+      ...noise(6),
+    ];
+    const res = await resolveAddress(
+      {
+        postalCode: "40500",
+        surface: 166,
+        dpeClass: "B",
+        dpeDate: "2023-11-15",
+        propertyType: "Maison",
+        geo: { lat: 43.74296, lon: -0.55421, radiusM: 500 },
+      },
+      { fetchFn: makeFetch(rows) },
+    );
+    expect(res[0]!.status).toBe("unresolved");
+  });
+
   it("sentinelles portail (dpeClass NS, gesClass VI) = DPE ABSENT, pas un conflit", async () => {
     // Bien'ici renvoie « NS » (non soumis) / « VI » (vierge) quand le diagnostic
     // manque. Une classe hors A-G ne doit jamais produire un conflit systématique :
