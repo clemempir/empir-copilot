@@ -5,9 +5,12 @@
   "scripts": {
     "test": "pnpm -r test",
     "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "collect": "node collector/bienici-feeder.mjs",
+    "resolve-pending": "tsx collector/resolve-pending.mts"
   },
   "devDependencies": {
-    "sharp": "^0.34.5"
+    "sharp": "^0.34.5",
+    "tsx": "^4.20.0"
   }
 }

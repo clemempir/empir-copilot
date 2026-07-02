@@ -1,0 +1,39 @@
+# EMPIR — collecte autonome Bien'ici (backbone cloud)
+# À placer dans : .github/workflows/empir-collect.yml
+#
+# Bien'ici (API publique) ne bloque pas les IP datacenter → OK en GitHub Action.
+# NE PAS ajouter Leboncoin/SeLoger ici (DataDome bloquerait l'IP du runner).
+#
+# Secrets à créer dans  Repo > Settings > Secrets and variables > Actions :
+#   SUPABASE_URL, SUPABASE_SERVICE_KEY, (option) RESOLVE_ENDPOINT, RESOLVE_AUTH
+
+name: empir-collect-bienici
+
+on:
+  schedule:
+    - cron: "30 6 * * *"      # tous les jours à 06:30 UTC
+  workflow_dispatch: {}        # + bouton "Run" manuel
+
+concurrency:
+  group: empir-collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Run Bien'ici feeder
+        env:
+          SUPABASE_URL:        ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          RESOLVE_ENDPOINT:    ${{ secrets.RESOLVE_ENDPOINT }}   # optionnel
+          RESOLVE_AUTH:        ${{ secrets.RESOLVE_AUTH }}       # optionnel
+          ALGO_VERSION:        ${{ github.sha }}
+          MAX_PER_RUN:         "60"
+          DELAY_MS:            "1200"
+        run: node collector/bienici-feeder.mjs

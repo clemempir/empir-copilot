@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EMPIR — Console de revue d'adresses</title>
+<style>
+  :root{
+    --bg:#0f1422; --panel:#161d2e; --panel2:#1d2638; --line:#2a3550;
+    --txt:#e7ecf5; --mut:#94a3c4; --accent:#4f8cff;
+    --ok:#1e9e54; --okbg:#11331f; --bad:#d9483b; --badbg:#37150f;
+    --warn:#c98a12; --warnbg:#33260a; --probable:#5b8a2b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;background:var(--bg);color:var(--txt)}
+  header{display:flex;align-items:center;gap:16px;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+  header h1{font-size:15px;margin:0;font-weight:700;letter-spacing:.3px}
+  header h1 span{color:var(--accent)}
+  .grow{flex:1}
+  .stat{font-size:12px;color:var(--mut)}
+  .stat b{color:var(--txt)}
+  button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel2);color:var(--txt);padding:7px 12px;border-radius:8px}
+  button:hover{border-color:var(--accent)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  select,input[type=text]{font:inherit;background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:6px 9px}
+  .wrap{display:grid;grid-template-columns:300px 1fr;gap:0;height:calc(100vh - 53px)}
+  /* queue */
+  .queue{border-right:1px solid var(--line);overflow:auto;background:var(--panel)}
+  .qfilter{padding:8px 10px;border-bottom:1px solid var(--line);display:flex;gap:6px}
+  .qfilter select{flex:1;font-size:12px}
+  .qitem{padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;gap:8px;align-items:center}
+  .qitem:hover{background:var(--panel2)}
+  .qitem.sel{background:#22304d;box-shadow:inset 3px 0 0 var(--accent)}
+  .qitem .qa{flex:1;min-width:0}
+  .qitem .qaddr{font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .qitem .qmeta{font-size:11px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none;background:#3a4straddle}
+  .v-ok{background:var(--ok)} .v-bad{background:var(--bad)} .v-fix{background:var(--accent)} .v-na{background:var(--warn)} .v-none{background:#3b4considère}
+  .pill{font-size:10px;padding:1px 6px;border-radius:10px;border:1px solid var(--line);color:var(--mut);flex:none}
+  /* detail */
+  .detail{overflow:auto;padding:18px 22px}
+  .empty{color:var(--mut);text-align:center;margin-top:80px}
+  .card{max-width:920px;margin:0 auto}
+  .toprow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  .badge{font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;text-transform:uppercase;letter-spacing:.4px}
+  .b-portal{background:#23304d;color:#bcd2ff}
+  .b-status{border:1px solid var(--line)}
+  .s-confirmed{background:var(--okbg);color:#5fd98a;border-color:#1e9e54}
+  .s-probable{background:#1c2a12;color:#a6d36a;border-color:var(--probable)}
+  .s-unresolved{background:var(--badbg);color:#f0958a;border-color:var(--bad)}
+  .addrblock{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:16px}
+  .addrblock .lbl{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px}
+  .addrblock .addr{font-size:24px;font-weight:700;margin:4px 0 10px}
+  .addrblock .addr.none{color:var(--mut);font-style:italic;font-weight:500;font-size:18px}
+  .confbar{height:8px;background:var(--panel2);border-radius:5px;overflow:hidden;margin:8px 0 4px;max-width:340px}
+  .confbar > i{display:block;height:100%;background:linear-gradient(90deg,#d9483b,#c98a12,#1e9e54)}
+  .meta-sub{font-size:12px;color:var(--mut)}
+  .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .maps{background:#1a73e8;border-color:#1a73e8;color:#fff;font-weight:600}
+  .sv{background:#34a853;border-color:#34a853;color:#fff}
+  .open{background:var(--panel2)}
+  h3{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);margin:18px 0 8px;border-bottom:1px solid var(--line);padding-bottom:5px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  td,th{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--mut);font-weight:600;font-size:11px;text-transform:uppercase}
+  .kv{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px 18px}
+  .kv div{font-size:13px}
+  .kv span{color:var(--mut)}
+  .cand{display:flex;align-items:center;gap:10px;padding:6px 8px;border-bottom:1px solid var(--line)}
+  .cand .ca{flex:1}
+  .cand a{color:var(--accent);text-decoration:none;font-size:12px}
+  .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+  .match-y{color:#5fd98a} .match-n{color:#f0958a}
+  /* verdict bar */
+  .verdict{position:sticky;bottom:0;background:linear-gradient(0deg,var(--panel) 80%,transparent);padding:14px 0 6px;margin-top:18px}
+  .verdict .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .vbtn{font-size:14px;font-weight:600;padding:11px 16px}
+  .vb-ok{background:var(--okbg);border-color:var(--ok);color:#5fd98a}
+  .vb-ok:hover{background:var(--ok);color:#fff}
+  .vb-bad{background:var(--badbg);border-color:var(--bad);color:#f0958a}
+  .vb-bad:hover{background:var(--bad);color:#fff}
+  .vb-fix{background:#13233f;border-color:var(--accent);color:#9cc2ff}
+  .vb-na{background:var(--warnbg);border-color:var(--warn);color:#e3b95a}
+  .kbd{font-size:10px;border:1px solid var(--line);border-radius:4px;padding:0 4px;color:var(--mut);margin-left:4px}
+  #fixrow{display:none;margin-top:10px;gap:8px}
+  #fixrow input{flex:1}
+  #note{margin-top:8px;width:100%}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--panel2);border:1px solid var(--accent);padding:10px 18px;border-radius:10px;opacity:0;transition:.2s;pointer-events:none}
+  .toast.show{opacity:1}
+  .hint{font-size:11px;color:var(--mut);margin-top:6px}
+  a.link{color:var(--accent)}
+  .photos{display:flex;gap:6px;flex-wrap:wrap}
+  .photos img{width:90px;height:64px;object-fit:cover;border-radius:6px;border:1px solid var(--line)}
+</style>
+</head>
+<body>
+<header>
+  <h1>EMPIR · <span>Console de revue</span></h1>
+  <div class="stat">Validés <b id="st-done">0</b>/<b id="st-tot">0</b> · ✓ <b id="st-ok" style="color:#5fd98a">0</b> · ✗ <b id="st-bad" style="color:#f0958a">0</b> · taux <b id="st-rate">—</b></div>
+  <div class="grow"></div>
+  <label class="stat"><input type="checkbox" id="autonext" checked> avance auto</label>
+  <button id="btn-import">Importer cas (JSON)</button>
+  <button id="btn-export" class="primary">Exporter labels (JSON)</button>
+  <input type="file" id="file" accept="application/json" style="display:none">
+</header>
+
+<div class="wrap">
+  <div class="queue">
+    <div class="qfilter">
+      <select id="filter">
+        <option value="all">Tous les cas</option>
+        <option value="todo">Non revus</option>
+        <option value="disagree">Désaccords / faibles</option>
+        <option value="ok">Validés ✓</option>
+        <option value="bad">Refusés ✗</option>
+      </select>
+    </div>
+    <div id="qlist"></div>
+  </div>
+
+  <div class="detail">
+    <div id="empty" class="empty">Sélectionne un cas dans la file →</div>
+    <div id="card" class="card" style="display:none"></div>
+  </div>
+</div>
+<div id="toast" class="toast"></div>
+
+<script>
+/* =========================================================================
+   EMPIR — Console de revue d'adresses (fichier autonome)
+   - Charge les cas depuis Supabase (table `cases`, clé anon + RLS lecture) ;
+     retombe sur l'échantillon intégré si la base est vide ou injoignable.
+   - Tu vérifies l'adresse (bouton Google Maps), puis Valides / Refuses / Corriges.
+   - Les labels sont enregistrés dans Supabase (table `labels`) ET en
+     localStorage (filet local si hors-ligne).
+   Format d'un cas = "dossier de cas / flight recorder" (cf. archi pipeline).
+   ========================================================================= */
+
+/* ---------- Supabase (clé ANON publique — la RLS protège l'écriture) ------ */
+const SB_URL  = "https://coqvobufxwurgrsphhnq.supabase.co";
+const SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNvcXZvYnVmeHd1cmdyc3BoaG5xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzNjg3NTksImV4cCI6MjA5Nzk0NDc1OX0.x11asOcuRZoG-xu0OlqnrWftM4MIMNansm6hhV_J9p4";
+const SB_HEADERS = { apikey: SB_ANON, authorization: "Bearer " + SB_ANON, "content-type": "application/json" };
+
+/* Adapte une ligne de la table `cases` (snake_case) au format console. */
+function adaptCase(row){
+  return {
+    id: row.id, portal: row.portal, listingUrl: row.listing_url,
+    agency: row.agency, ref: row.ref,
+    extracted: row.extracted || {},
+    resolved: row.resolved || { address:null, confidence:0, status:row.status },
+    candidates: row.candidates || [],
+    scoreBreakdown: (row.score_breakdown || []).map(b => ({
+      c: b.criterion ?? b.c, matched: b.matched,
+      expected: b.expected, actual: b.actual,
+    })),
+    pseudoLabel: row.pseudo_label || null,
+    photos: row.photos || [],
+  };
+}
+
+const SAMPLE_CASES = [
+  {
+    id:"sl-261498325", portal:"SeLoger", listingUrl:"https://www.seloger.com/annonces/achat/maison/saint-sever-40/261498325.htm",
+    agency:"Orpi Saint-Sever Arceaux", ref:"4317",
+    extracted:{propertyType:"maison",surface:50,rooms:3,dpeClass:"G",dpeKwh:null,gesClass:"C",gesVal:null,dpeDate:null,year:null,city:"Saint-Sever",postalCode:"40500",marker:{lat:43.753235,lon:-0.570683,precise:true}},
+    resolved:{address:"32 Rue du Castallet, 40500 Saint-Sever",lat:43.753267,lon:-0.570677,confidence:96,status:"confirmed",ademeCertId:"2340E3064983P",parcelId:null},
+    candidates:[{address:"32 Rue du Castallet, 40500 Saint-Sever",confidence:96,numero_dpe:"2340E3064983P",dist_m:4}],
+    scoreBreakdown:[{c:"Position (marqueur)",matched:true,expected:"43.7532,-0.5707",actual:"à 4 m"},{c:"Surface",matched:true,expected:"50 m²",actual:"49,5 m²"},{c:"DPE",matched:true,expected:"G",actual:"G"},{c:"GES",matched:true,expected:"C",actual:"C"},{c:"Chauffage",matched:true,expected:"électrique",actual:"Électricité"}],
+    pseudoLabel:{agree:true,method:"marqueur+attributs"}, photos:[]
+  },
+  {
+    id:"bi-TACHON23-66193", portal:"Bien'ici", listingUrl:"https://www.bienici.com/annonce/vente/saint-sever/batiment-immeuble/hektor-TACHON23-66193",
+    agency:"SN Agence Tachon", ref:"V20066193",
+    extracted:{propertyType:"immeuble",surface:284,rooms:null,dpeClass:"E",dpeKwh:285,gesClass:"C",gesVal:11,dpeDate:"2023-10-25",year:null,city:"Saint-Sever",postalCode:"40500",marker:{lat:43.760654,lon:-0.568646,precise:false,radiusM:1000}},
+    resolved:{address:"12 Rue de Pontix, 40500 Saint-Sever",lat:43.758307,lon:-0.575502,confidence:93,status:"confirmed",ademeCertId:"2640E1528408R",parcelId:null},
+    candidates:[{address:"12 Rue de Pontix, 40500 Saint-Sever",confidence:93,numero_dpe:"2640E1528408R",dist_m:606}],
+    scoreBreakdown:[{c:"Date diag.",matched:true,expected:"2023-10-25",actual:"un lot daté 25/10/2023"},{c:"Conso",matched:true,expected:"285",actual:"285,7"},{c:"Surface immeuble",matched:true,expected:"284 m²",actual:"284 m²"},{c:"Nb logements",matched:true,expected:"5",actual:"5"},{c:"Disque flou",matched:true,expected:"<1000 m",actual:"606 m"}],
+    pseudoLabel:{agree:true,method:"date+conso+immeuble"}, photos:[]
+  },
+  {
+    id:"lbc-3076439865", portal:"Leboncoin", listingUrl:"https://www.leboncoin.fr/ad/ventes_immobilieres/3076439865",
+    agency:"HUMAN Immobilier", ref:"572-306B",
+    extracted:{propertyType:"immeuble",surface:555,rooms:null,dpeClass:"G",dpeKwh:null,gesClass:null,gesVal:null,dpeDate:"2023-12-19",year:1758,city:"Saint-Sever",postalCode:"40500",marker:null},
+    resolved:{address:"24 Rue des Ursulines, 40500 Saint-Sever",lat:43.759451,lon:-0.572381,confidence:78,status:"confirmed",ademeCertId:"2340E4409891V",parcelId:null},
+    candidates:[{address:"24 Rue des Ursulines, 40500 Saint-Sever",confidence:78,numero_dpe:"2340E4409891V",dist_m:null}],
+    scoreBreakdown:[{c:"Date diag.",matched:true,expected:"2023-12-19",actual:"unique à St-Sever"},{c:"Ancienneté",matched:true,expected:"1758",actual:"1758"},{c:"DPE",matched:true,expected:"G",actual:"un lot G"},{c:"Surface",matched:false,expected:"555 m² (immeuble)",actual:"lot 89 m²"}],
+    pseudoLabel:{agree:true,method:"date unique"}, photos:[]
+  },
+  {
+    id:"bi-iad-2030094", portal:"Bien'ici", listingUrl:"https://www.bienici.com/annonce/vente/saint-sever/maison/3pieces/iad-france-2030094",
+    agency:"IAD France", ref:"1966901",
+    extracted:{propertyType:"maison",surface:65,rooms:3,dpeClass:"C",dpeKwh:129,gesClass:"A",gesVal:5,dpeDate:"2024-02-14",year:1908,city:"Saint-Sever",postalCode:"40500",marker:{lat:43.771964,lon:-0.569646,precise:false,radiusM:125}},
+    resolved:{address:"4 Avenue de l'Armagnac, 40500 Saint-Sever",lat:43.771113,lon:-0.569629,confidence:91,status:"confirmed",ademeCertId:"2440E0534882B",parcelId:null},
+    candidates:[{address:"4 Avenue de l'Armagnac, 40500 Saint-Sever",confidence:91,numero_dpe:"2440E0534882B",dist_m:95}],
+    scoreBreakdown:[{c:"Date diag.",matched:true,expected:"2024-02-14",actual:"unique"},{c:"Conso",matched:true,expected:"129",actual:"129,5"},{c:"GES",matched:true,expected:"5",actual:"5"},{c:"Disque flou",matched:true,expected:"<125 m",actual:"95 m"}],
+    pseudoLabel:{agree:true,method:"date+conso+flou"}, photos:[]
+  },
+  {
+    id:"bi-laforet-52748350", portal:"Bien'ici", listingUrl:"https://www.bienici.com/annonce/vente/saint-sever/appartement/3pieces/laforet-immo-facile-52748350",
+    agency:"Laforêt Saint-Sever", ref:"16410",
+    extracted:{propertyType:"appartement",surface:46,rooms:3,dpeClass:"C",dpeKwh:127,gesClass:"A",gesVal:4,dpeDate:"2026-05-12",year:null,city:"Saint-Sever",postalCode:"40500",marker:{lat:43.769003,lon:-0.571601,precise:false,radiusM:125}},
+    resolved:{address:"10 Rue de Papin, 40500 Saint-Sever",lat:43.768543,lon:-0.57033,confidence:90,status:"confirmed",ademeCertId:"2640E1307914D",parcelId:null},
+    candidates:[{address:"10 Rue de Papin, 40500 Saint-Sever",confidence:90,numero_dpe:"2640E1307914D",dist_m:114}],
+    scoreBreakdown:[{c:"Date visite",matched:true,expected:"2026-05-12",actual:"date_visite (fallback)"},{c:"Conso",matched:true,expected:"127",actual:"127"},{c:"Surface",matched:true,expected:"46 m²",actual:"46 m²"},{c:"Disque flou",matched:true,expected:"<125 m",actual:"114 m"}],
+    pseudoLabel:{agree:true,method:"date_visite+conso"}, photos:[]
+  },
+  {
+    id:"sl-256068147", portal:"SeLoger", listingUrl:"https://www.seloger.com/256068147/detail.htm",
+    agency:"HUMAN Immobilier", ref:"572-121",
+    extracted:{propertyType:"immeuble",surface:234,rooms:null,dpeClass:"D",dpeKwh:226,gesClass:"C",gesVal:18,dpeDate:"2024-05-28",year:null,city:"Saint-Sever",postalCode:"40500",marker:null},
+    resolved:{address:"7 Rue Saint-Jean, 40500 Saint-Sever",lat:43.758593,lon:-0.573704,confidence:54,status:"probable",ademeCertId:"2440E1865923Y",parcelId:null},
+    candidates:[{address:"7 Rue Saint-Jean, 40500 Saint-Sever",confidence:54,numero_dpe:"2440E1865923Y",dist_m:null},{address:"2 Rue du Tribunal, 40500 Saint-Sever",confidence:38,numero_dpe:"2340E3363586I",dist_m:null}],
+    scoreBreakdown:[{c:"Date diag.",matched:true,expected:"2024-05-28",actual:"match → maison 357 m²"},{c:"Type",matched:false,expected:"immeuble",actual:"maison"},{c:"Surface",matched:false,expected:"234 m²",actual:"357 m²"},{c:"DPE",matched:false,expected:"D/226",actual:"E/285"}],
+    pseudoLabel:{agree:false,method:"date seule (incohérence type/surface)"}, photos:[],
+    note_seed:"Cas piège : vraie adresse = 2 Rue du Tribunal. La date 28/05/2024 mène par erreur au 7 Rue Saint-Jean. DPE annoncé (226/18) absent de la base (re-diagnostic non publié)."
+  },
+  {
+    id:"bi-immofacile-59810271", portal:"Bien'ici", listingUrl:"https://www.bienici.com/annonce/vente/saint-sever/maison/6pieces/immo-facile-59810271",
+    agency:"Côté Patio Immobilier", ref:"MHD606",
+    extracted:{propertyType:"maison",surface:228,rooms:6,dpeClass:null,dpeKwh:null,gesClass:null,gesVal:null,dpeDate:null,year:1955,city:"Saint-Sever",postalCode:"40500",marker:{lat:43.760682,lon:-0.572581,precise:false,radiusM:125}},
+    resolved:{address:null,lat:null,lon:null,confidence:0,status:"unresolved",ademeCertId:null,parcelId:null},
+    candidates:[],
+    scoreBreakdown:[{c:"DPE",matched:false,expected:"—",actual:"aucun DPE annoncé"},{c:"Candidats ADEME",matched:false,expected:"≥1",actual:"0 dans le rayon"}],
+    pseudoLabel:{agree:null,method:"bien sans DPE — abstention attendue"}, photos:[],
+    note_seed:"Bien sans DPE dans la base → 'non résolu' est la BONNE réponse (abstention correcte)."
+  }
+];
+
+/* ---------- état ---------- */
+let CASES = [];
+let labels = loadLabels();
+let curId = null;
+
+const $ = s=>document.querySelector(s);
+const enc = encodeURIComponent;
+
+function loadLabels(){ try{return JSON.parse(localStorage.getItem("empir_labels")||"{}")}catch(e){return {}} }
+function persistLabels(){ localStorage.setItem("empir_labels", JSON.stringify(labels)); }
+
+/* Charge les cas + les verdicts déjà posés depuis Supabase. */
+async function loadCases(){
+  try{
+    const r = await fetch(SB_URL+"/rest/v1/cases?status=in.(confirmed,probable,unresolved)&order=collected_at.desc&limit=500", { headers: SB_HEADERS });
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    const rows = await r.json();
+    CASES = rows.length ? rows.map(adaptCase) : SAMPLE_CASES;
+    // Verdicts déjà en base → fusionnés avec le localStorage.
+    const lr = await fetch(SB_URL+"/rest/v1/labels?select=case_id,verdict,corrected_address,note,reviewed_at", { headers: SB_HEADERS });
+    if(lr.ok){
+      for(const l of await lr.json()){
+        labels[l.case_id] = { verdict:l.verdict, correctedAddress:l.corrected_address, note:l.note, reviewedAt:l.reviewed_at };
+      }
+      persistLabels();
+    }
+  }catch(e){
+    console.warn("Supabase injoignable, échantillon local :", e);
+    CASES = SAMPLE_CASES;
+  }
+  render(); updateStats();
+}
+
+/* Enregistre le verdict dans Supabase (upsert) + localStorage (filet local). */
+function saveLabel(id, verdict, correctedAddress, note){
+  labels[id] = { verdict, correctedAddress: correctedAddress||null, note: note||null, reviewedAt: new Date().toISOString() };
+  persistLabels();
+  fetch(SB_URL+"/rest/v1/labels", {
+    method:"POST",
+    headers:{ ...SB_HEADERS, Prefer:"resolution=merge-duplicates" },
+    body: JSON.stringify({ case_id:id, verdict, corrected_address:correctedAddress||null, note:note||null }),
+  }).catch(e=>console.warn("label non synchronisé :", e));
+  render(); updateStats();
+}
+
+/* ---------- rendu file ---------- */
+function verdictDot(id){
+  const v = labels[id]?.verdict;
+  return {correct:"v-ok",wrong:"v-bad",fixed:"v-fix",unresolvable_ok:"v-na"}[v] || "v-none";
+}
+function passesFilter(c){
+  const f = $("#filter").value, v=labels[c.id]?.verdict;
+  if(f==="all") return true;
+  if(f==="todo") return !v;
+  if(f==="ok") return v==="correct";
+  if(f==="bad") return v==="wrong";
+  if(f==="disagree") return c.pseudoLabel?.agree===false || (c.resolved?.confidence??100) < 60;
+  return true;
+}
+function render(){
+  const list = $("#qlist"); list.innerHTML="";
+  CASES.filter(passesFilter).forEach(c=>{
+    const el=document.createElement("div");
+    el.className="qitem"+(c.id===curId?" sel":"");
+    el.onclick=()=>select(c.id);
+    const addr = c.resolved?.address || "— non résolu —";
+    el.innerHTML = `<span class="dot ${verdictDot(c.id)}"></span>
+      <div class="qa"><div class="qaddr">${addr}</div>
+      <div class="qmeta">${c.portal} · ${c.extracted.propertyType} · ${c.extracted.surface||"?"} m²</div></div>
+      <span class="pill">${c.resolved?.confidence??0}%</span>`;
+    list.appendChild(el);
+  });
+  $("#st-tot").textContent = CASES.length;
+}
+function updateStats(){
+  const vals=Object.values(labels);
+  const done=vals.filter(v=>["correct","wrong","fixed","unresolvable_ok"].includes(v.verdict)).length;
+  const ok=vals.filter(v=>v.verdict==="correct"||v.verdict==="unresolvable_ok").length;
+  const bad=vals.filter(v=>v.verdict==="wrong"||v.verdict==="fixed").length;
+  $("#st-done").textContent=done; $("#st-ok").textContent=ok; $("#st-bad").textContent=bad;
+  $("#st-rate").textContent = done? Math.round(ok/done*100)+"%" : "—";
+}
+
+/* ---------- rendu détail ---------- */
+function select(id){ curId=id; render(); renderCard(); }
+function fmt(v){ return (v===null||v===undefined||v==="")?'<span style="color:var(--mut)">—</span>':v; }
+
+function renderCard(){
+  const c = CASES.find(x=>x.id===curId);
+  if(!c){ $("#card").style.display="none"; $("#empty").style.display="block"; return; }
+  $("#empty").style.display="none"; $("#card").style.display="block";
+  const e=c.extracted, r=c.resolved, lab=labels[c.id];
+  const mapsQ = r?.address ? `https://www.google.com/maps/search/?api=1&query=${enc(r.address)}` : null;
+  const sv = (r?.lat)? `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${r.lat},${r.lon}` : null;
+
+  $("#card").innerHTML = `
+    <div class="toprow">
+      <span class="badge b-portal">${c.portal}</span>
+      <span class="badge b-status s-${r.status}">${({confirmed:"Confirmée",probable:"Probable",unresolved:"Non résolu"})[r.status]}</span>
+      <span class="meta-sub">${e.propertyType} · réf ${fmt(c.ref)} · ${fmt(c.agency)}</span>
+      <span class="grow"></span>
+      <a class="link" href="${c.listingUrl}" target="_blank" rel="noopener">↗ Ouvrir l'annonce</a>
+    </div>
+
+    <div class="addrblock">
+      <div class="lbl">Adresse trouvée</div>
+      <div class="addr ${r.address?'':'none'}">${r.address || "Aucune adresse (abstention)"}</div>
+      ${r.address?`<div class="confbar"><i style="width:${r.confidence}%"></i></div>
+      <div class="meta-sub">Confiance ${r.confidence}% · DPE ${fmt(r.ademeCertId)} ${r.parcelId?'· parcelle '+r.parcelId:''}</div>`:''}
+      <div class="actions">
+        ${mapsQ?`<button class="maps" onclick="window.open('${mapsQ}','_blank')">📍 Ouvrir dans Google Maps</button>`:''}
+        ${sv?`<button class="sv" onclick="window.open('${sv}','_blank')">👁 Street View</button>`:''}
+        <button class="open" onclick="window.open('${c.listingUrl}','_blank')">↗ Annonce</button>
+        ${mapsQ?`<button class="open" onclick="navigator.clipboard.writeText('${r.address.replace(/'/g,"\\'")}');toast('Adresse copiée')">⧉ Copier l'adresse</button>`:''}
+      </div>
+    </div>
+
+    <h3>Données extraites de l'annonce</h3>
+    <div class="kv">
+      <div><span>Type</span> ${fmt(e.propertyType)}</div>
+      <div><span>Surface</span> ${fmt(e.surface)} m²</div>
+      <div><span>Pièces</span> ${fmt(e.rooms)}</div>
+      <div><span>Année</span> ${fmt(e.year)}</div>
+      <div><span>DPE</span> ${fmt(e.dpeClass)} ${e.dpeKwh?'('+e.dpeKwh+' kWh)':''}</div>
+      <div><span>GES</span> ${fmt(e.gesClass)} ${e.gesVal?'('+e.gesVal+')':''}</div>
+      <div><span>Date diag.</span> ${fmt(e.dpeDate)}</div>
+      <div><span>Commune</span> ${fmt(e.city)} ${fmt(e.postalCode)}</div>
+      <div><span>Marqueur géo</span> ${e.marker?(e.marker.precise?'précis':'flou '+(e.marker.radiusM||'?')+' m'):'—'}</div>
+    </div>
+
+    <h3>Candidats ADEME (${c.candidates.length})</h3>
+    ${c.candidates.length? c.candidates.map((cd,i)=>`
+      <div class="cand">
+        <span class="pill">#${i+1}</span>
+        <div class="ca"><div>${cd.address}</div>
+        <div class="meta-sub mono">${cd.numero_dpe||''} ${cd.dist_m!=null?'· '+cd.dist_m+' m':''} · ${cd.confidence}%</div></div>
+        <a href="https://www.google.com/maps/search/?api=1&query=${enc(cd.address)}" target="_blank" rel="noopener">📍 Maps</a>
+      </div>`).join('') : '<div class="meta-sub">Aucun candidat dans le périmètre.</div>'}
+
+    <h3>Détail du score</h3>
+    <table><thead><tr><th>Critère</th><th>Match</th><th>Attendu</th><th>Trouvé</th></tr></thead><tbody>
+      ${c.scoreBreakdown.map(s=>`<tr><td>${s.c}</td>
+        <td class="${s.matched?'match-y':'match-n'}">${s.matched?'✓':'✗'}</td>
+        <td class="mono">${fmt(s.expected)}</td><td class="mono">${fmt(s.actual)}</td></tr>`).join('')}
+    </tbody></table>
+    <div class="hint">Pseudo-label automatique : ${c.pseudoLabel?.agree===true?'✓ accord des voies':c.pseudoLabel?.agree===false?'✗ désaccord':'∅'} (${fmt(c.pseudoLabel?.method)})</div>
+    ${c.note_seed?`<div class="hint">ℹ ${c.note_seed}</div>`:''}
+
+    ${c.photos&&c.photos.length?`<h3>Photos</h3><div class="photos">${c.photos.map(p=>`<img src="${p}" loading="lazy">`).join('')}</div>`:''}
+
+    <div class="verdict">
+      <div class="row">
+        <button class="vbtn vb-ok"  onclick="verdict('correct')">✓ Adresse correcte <span class="kbd">V</span></button>
+        <button class="vbtn vb-bad" onclick="verdict('wrong')">✗ Adresse fausse <span class="kbd">R</span></button>
+        <button class="vbtn vb-fix" onclick="showFix()">✎ Corriger l'adresse <span class="kbd">C</span></button>
+        <button class="vbtn vb-na"  onclick="verdict('unresolvable_ok')">⊘ Non résoluble (OK) <span class="kbd">N</span></button>
+        <span class="grow"></span>
+        <button onclick="nav(-1)">◀ <span class="kbd">←</span></button>
+        <button onclick="nav(1)">▶ <span class="kbd">→</span></button>
+      </div>
+      <div id="fixrow" class="row">
+        <input id="fixaddr" type="text" placeholder="Vraie adresse (ex: 2 Rue du Tribunal, 40500 Saint-Sever)" value="${lab?.correctedAddress||''}">
+        <button onclick="checkFix()">📍 Vérifier sur Maps</button>
+        <button class="primary" onclick="verdict('fixed')">Enregistrer la correction</button>
+      </div>
+      <input id="note" type="text" placeholder="Note (optionnel)" value="${lab?.note||''}">
+      <div class="hint">Raccourcis : V valider · R refuser · C corriger · N non-résoluble · ← → naviguer. ${lab?'<b style="color:var(--accent)">— déjà revu : '+lab.verdict+'</b>':''}</div>
+    </div>`;
+}
+
+/* ---------- actions ---------- */
+function verdict(v){
+  const c=CASES.find(x=>x.id===curId); if(!c) return;
+  const note=$("#note")?.value||"";
+  const corrected = v==="fixed" ? ($("#fixaddr")?.value||"") : null;
+  if(v==="fixed" && !corrected){ toast("Saisis la vraie adresse d'abord"); showFix(); return; }
+  saveLabel(c.id, v, corrected, note);
+  toast({correct:"✓ Validé",wrong:"✗ Refusé",fixed:"✎ Corrigé",unresolvable_ok:"⊘ Abstention OK"}[v]);
+  if($("#autonext").checked) setTimeout(()=>nav(1),180); else renderCard();
+}
+function showFix(){ const f=$("#fixrow"); f.style.display="flex"; $("#fixaddr").focus(); }
+function checkFix(){ const a=$("#fixaddr").value.trim(); if(a) window.open(`https://www.google.com/maps/search/?api=1&query=${enc(a)}`,'_blank'); }
+function nav(d){
+  const vis=CASES.filter(passesFilter); if(!vis.length) return;
+  let i=vis.findIndex(x=>x.id===curId); i=(i+d+vis.length)%vis.length; select(vis[i].id);
+  $(".detail").scrollTop=0;
+}
+let toastT;
+function toast(m){ const t=$("#toast"); t.textContent=m; t.classList.add("show"); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("show"),1400); }
+
+/* ---------- import / export ---------- */
+$("#btn-export").onclick=()=>{
+  const out = CASES.map(c=>({...c, review: labels[c.id]||null}));
+  const blob=new Blob([JSON.stringify(out,null,2)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download="empir_labels_"+new Date().toISOString().slice(0,10)+".json"; a.click();
+  toast("Export téléchargé ("+Object.keys(labels).length+" labels)");
+};
+$("#btn-import").onclick=()=>$("#file").click();
+$("#file").onchange=e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=()=>{ try{ const data=JSON.parse(rd.result);
+    CASES = Array.isArray(data)?data:(data.cases||[]);
+    CASES.forEach(c=>{ if(c.review) labels[c.id]=c.review; });
+    persistLabels(); curId=null; render(); updateStats(); $("#card").style.display="none"; $("#empty").style.display="block";
+    toast("Importé "+CASES.length+" cas");
+  }catch(err){ alert("JSON invalide: "+err.message); } };
+  rd.readAsText(f);
+};
+$("#filter").onchange=render;
+
+/* clavier */
+document.addEventListener("keydown",ev=>{
+  if(["INPUT","TEXTAREA"].includes(ev.target.tagName)) return;
+  const k=ev.key.toLowerCase();
+  if(k==="v") verdict("correct");
+  else if(k==="r") verdict("wrong");
+  else if(k==="c") showFix();
+  else if(k==="n") verdict("unresolvable_ok");
+  else if(ev.key==="ArrowRight") nav(1);
+  else if(ev.key==="ArrowLeft") nav(-1);
+});
+
+loadCases(); updateStats();
+</script>
+</body>
+</html>
