@@ -156,6 +156,10 @@ describe.runIf(!!process.env.CORPUS)("CORPUS régression (ADEME live)", () => {
       expect(top!.status, "statut").toBe(c.expect.status);
       if (c.expect.addressIncludes) expect(top!.address, "adresse").toContain(c.expect.addressIncludes);
       if (c.expect.flag) expect(top!.flags ?? [], "flag").toContain(c.expect.flag);
+      // Objectif produit : tout bien résolu affiche un badge de confiance > 75 %.
+      if (c.expect.status !== "unresolved") {
+        expect(top!.confidence, "confiance affichée").toBeGreaterThan(75);
+      }
     }, 40_000);
   }
 });

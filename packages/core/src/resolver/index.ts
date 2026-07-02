@@ -337,12 +337,19 @@ function dpeFingerprintCandidate(
 
   const c = best.cert;
   const d = dist.get(c);
+  // L'empreinte (conso exacte + surface ±3 + unicité avec écart au 2e) vaut 76 ;
+  // chaque corroboration optionnelle (classe GES concordante, marqueur géo dans
+  // le rayon) renforce, plafonné à 85 (jamais « confirmed » sans marqueur précis).
+  let fpConf = 76;
+  if (input.gesClass && c.gesClass && c.gesClass === input.gesClass) fpConf += 4;
+  if (input.geo && d != null) fpConf += 3;
+  fpConf = Math.min(fpConf, 85);
   return {
     address: c.address,
     lat: c.lat ?? 0,
     lon: c.lon ?? 0,
     ademeCertId: c.certId,
-    confidence: 72,
+    confidence: fpConf,
     status: "probable",
     resolved: false,
     distanceM: d != null ? Math.round(d) : undefined,
@@ -452,12 +459,19 @@ function lotInBuildingCandidates(
   }
   const ordered = [...best.values()].sort(cmpLot);
 
+  // Un SEUL immeuble concordant dans le rayon parcelle = signal décisif : le
+  // marqueur précis a une erreur de l'ordre de 10-50 m, la distance exacte
+  // n'apporte alors plus d'information (elle ne départage que des concurrents).
+  const unique = best.size === 1;
+
   return ordered.slice(0, limit).map((cand) => {
     const c = cand.cert;
-    const conf = Math.max(
-      40,
-      Math.min(70, 55 + (cand.exact ? 12 : 0) + (cand.aptMatch ? 10 : 0) - Math.min(10, Math.round(cand.d / 10))),
-    );
+    const gesMatch = !!input.gesClass && !!c.gesClass && c.gesClass === input.gesClass;
+    const bonus = (cand.exact ? 8 : 0) + (gesMatch ? 4 : 0) + (cand.aptMatch ? 6 : 0);
+    const conf = unique
+      ? Math.min(88, 76 + bonus)
+      : // Plusieurs immeubles candidats : l'ambiguïté plafonne sous la barre de confiance.
+        Math.max(45, Math.min(74, 55 + bonus - Math.round(cand.d / 10)));
     const breakdown: MatchBreakdownItem[] = [
       {
         criterion: "immeuble-dpe",
@@ -615,10 +629,14 @@ function decideAttributes(
     return { status: "unresolved", confidence: Math.min(confidence, 30), flags: ["conflict"] };
   }
   if (margin >= MARGIN_CONFIRM && strong >= 1) {
-    return { status: "confirmed", confidence, flags: [] };
+    // « Confirmed » = on l'affiche comme vérifié : jamais sous 85.
+    return { status: "confirmed", confidence: Math.max(85, confidence), flags: [] };
   }
   if (margin >= MARGIN_PROBABLE) {
-    return { status: "probable", confidence, flags: [] };
+    // Bande « probable » [70, 84] : la marge (≥ 1,2) et l'absence de conflit sont
+    // déjà gatées — confAttr module la position dans la bande au lieu de
+    // re-pénaliser une décision déjà prise (double comptage de l'incertitude).
+    return { status: "probable", confidence: 70 + Math.round(confAttr * 14), flags: [] };
   }
   return { status: "unresolved", confidence, flags: ["low-margin"] };
 }
