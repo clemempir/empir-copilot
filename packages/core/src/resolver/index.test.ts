@@ -462,4 +462,35 @@ describe("resolveAddress — anti-faux-positif (status unresolved)", () => {
     const res = await resolveAddress({ postalCode: "" });
     expect(res).toEqual([]);
   });
+
+  it("sentinelles portail (dpeClass NS, gesClass VI) = DPE ABSENT, pas un conflit", async () => {
+    // Bien'ici renvoie « NS » (non soumis) / « VI » (vierge) quand le diagnostic
+    // manque. Une classe hors A-G ne doit jamais produire un conflit systématique :
+    // marqueur précis + DPE absent → probable (geo-decided), pas unresolved.
+    const rows = [
+      row({
+        id: "SOLO",
+        address: "5 Rue du Marqueur 40500 Saint-Sever",
+        geo: "43.75320,-0.57065", // ~4 m du marqueur
+        surface: 109,
+        type: "maison",
+        dpe: "D",
+        kwh: 210,
+      }),
+    ];
+    const res = await resolveAddress(
+      {
+        postalCode: "40500",
+        surface: 109,
+        dpeClass: "NS" as never,
+        gesClass: "VI" as never,
+        propertyType: "Maison",
+        geo: { lat: 43.75323, lon: -0.57068, precise: true },
+      },
+      { fetchFn: makeFetch(rows) },
+    );
+    expect(res[0]!.status).toBe("probable");
+    expect(res[0]!.flags).toContain("dpe-absent");
+    expect(res[0]!.flags).not.toContain("conflict");
+  });
 });

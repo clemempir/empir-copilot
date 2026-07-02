@@ -181,7 +181,7 @@ function buildCacheKey(input: ResolverInput): string {
     : "_";
   return [
     // Version d'algo : bumper à chaque changement de logique pour invalider le cache.
-    "v13-conf-calibration",
+    "v14-input-sanitize",
     input.postalCode,
     bucket(input.surface, 2),
     bucket(input.dpeKwhM2, 20),
@@ -554,9 +554,30 @@ const ACC_CAP = 10;
 const W_ACC = 0.45;
 const W_MARGIN = 0.55;
 
+/**
+ * Nettoie l'entrée : les portails renvoient des sentinelles à la place des
+ * classes DPE/GES quand le diagnostic manque (« NS », « VI » chez Bien'ici).
+ * Hors A-G = ABSENT, sinon conflit systématique (cf. core index.ts).
+ */
+function sanitizeInput(i: ResolverInput): ResolverInput {
+  const letter = (v?: string) =>
+    v && /^[A-Ga-g]$/.test(v) ? (v.toUpperCase() as ResolverInput["dpeClass"]) : undefined;
+  const pos = (v?: number) => (v != null && v > 0 ? v : undefined);
+  return {
+    ...i,
+    dpeClass: letter(i.dpeClass),
+    gesClass: letter(i.gesClass),
+    dpeKwhM2: pos(i.dpeKwhM2),
+    gesKgCO2M2: pos(i.gesKgCO2M2),
+    surface: pos(i.surface),
+    landSurface: pos(i.landSurface),
+  };
+}
+
 async function resolveAddress(
-  input: ResolverInput,
+  rawInput: ResolverInput,
 ): Promise<{ candidates: ResolvedAddress[]; debug: ResolveDebug }> {
+  const input = sanitizeInput(rawInput);
   const certs = await fetchAdeme(input);
   if (!certs.length) {
     return { candidates: [], debug: { ademeTotal: 0, keptAfterSurfaceFilter: 0, usedLandSurfacePass: false } };

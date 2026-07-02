@@ -76,12 +76,13 @@ const W_MARGIN = 0.55;
  * ⚠️ Réplique manuelle dans `supabase/functions/resolve-address/index.ts`.
  */
 export async function resolveAddress(
-  input: ResolverInput,
+  rawInput: ResolverInput,
   opts: ResolveAddressOptions = {},
 ): Promise<ResolvedAddress[]> {
   const fetchFn = opts.fetchFn ?? fetch;
   const limit = opts.limit ?? 5;
   const withCadastre = opts.withCadastre ?? true;
+  const input = sanitizeInput(rawInput);
 
   if (!input.postalCode) return [];
 
@@ -162,6 +163,28 @@ export async function resolveAddress(
 
 function round3(n: number): number {
   return Math.round(n * 1000) / 1000;
+}
+
+/**
+ * Nettoie l'entrée : les portails renvoient des sentinelles à la place des
+ * classes DPE/GES quand le diagnostic manque (« NS » = non soumis, « VI » =
+ * vierge chez Bien'ici). Une classe hors A-G doit être traitée comme ABSENTE,
+ * sinon elle ne matche jamais un certificat et produit un conflit systématique.
+ * Idem pour les valeurs chiffrées ≤ 0.
+ */
+function sanitizeInput(i: ResolverInput): ResolverInput {
+  const letter = (v?: string) =>
+    v && /^[A-Ga-g]$/.test(v) ? (v.toUpperCase() as ResolverInput["dpeClass"]) : undefined;
+  const pos = (v?: number) => (v != null && v > 0 ? v : undefined);
+  return {
+    ...i,
+    dpeClass: letter(i.dpeClass),
+    gesClass: letter(i.gesClass),
+    dpeKwhM2: pos(i.dpeKwhM2),
+    gesKgCO2M2: pos(i.gesKgCO2M2),
+    surface: pos(i.surface),
+    landSurface: pos(i.landSurface),
+  };
 }
 
 /** Clé de regroupement d'adresse : identifiant BAN, sinon adresse normalisée. */
@@ -532,6 +555,11 @@ function decide(
   limit: number,
 ): ResolvedAddress[] {
   if (!addresses.length) return [];
+
+  // NB (tenté puis retiré) : disqualifier les certs « conflict » avant la marge
+  // fabrique des faux positifs — la marge, calculée sur le petit groupe restant,
+  // explose et confirme des matchs faibles (attrapé par les négatifs du corpus).
+  // Les certs contradictoires restent donc en lice comme garde-fous d'ambiguïté.
 
   // Référence attributaire : marge + accumulation entre adresses distinctes.
   const byScore = [...addresses].sort((a, b) => b.score - a.score);
