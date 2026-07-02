@@ -622,6 +622,7 @@ async function resolveAddress(
     if (lots.length) ranked = promoteCandidates(lots, ranked, 5);
   }
 
+
   // Cadastre top-1
   if (ranked[0] && ranked[0].lat && ranked[0].lon) {
     const parcel = await lookupParcel(ranked[0].lat, ranked[0].lon);

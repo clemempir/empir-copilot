@@ -95,6 +95,31 @@ const CASES: Case[] = [
   },
   // ── NÉGATIFS : doivent RESTER unresolved (anti-faux-positif des canaux) ──────
   {
+    name: "NÉGATIF Marsan — T1 40 C/163 : MARQUEUR PORTAIL ERRONÉ (vraie adresse 10 Av. du Marsan à ~1,9 km du disque — centré agence ?) + DPE du lot absent d'ADEME (2026-06-12 trop récent) → abstention correcte (Bien'ici 52457328, verdict console « fixed »)",
+    input: {
+      postalCode: "40500", surface: 40, rooms: 2, yearBuilt: 1975, dpeClass: "C", dpeKwhM2: 163,
+      gesClass: "B", gesKgCO2M2: 6, dpeDate: "2026-06-12", propertyType: "Appartement",
+      geo: { lat: 43.75545981038058, lon: -0.5724427941826754, radiusM: 125 },
+    },
+    expect: { status: "unresolved" },
+  },
+  {
+    name: "NÉGATIF Castallet 26 — maison 75 m² SANS DPE, disque : vraie adresse (26 Rue du Castallet, verdict console) absente d'ADEME → abstention correcte (Bien'ici 52646091)",
+    input: {
+      postalCode: "40500", surface: 75, landSurface: 516, yearBuilt: 1935, propertyType: "Maison",
+      geo: { lat: 43.75458884339806, lon: -0.5709091640475897, radiusM: 125 },
+    },
+    expect: { status: "unresolved" },
+  },
+  {
+    name: "NÉGATIF Pontix 23 — maison 140 m² SANS DPE, disque : vraie adresse (23 Rue de Pontix, verdict console) absente d'ADEME → abstention correcte (Bien'ici 52294572)",
+    input: {
+      postalCode: "40500", surface: 140, rooms: 9, landSurface: 40, propertyType: "Maison",
+      geo: { lat: 43.75688193472568, lon: -0.5750419396461732, radiusM: 125 },
+    },
+    expect: { status: "unresolved" },
+  },
+  {
     name: "NÉGATIF Argenté — appart 90 B/43 GES B/7, cert conso-proche fait 63 m² GES A (surface >1,4×), pas le même logement (SeLoger 271875149)",
     input: {
       postalCode: "40000", surface: 90, dpeClass: "B", dpeKwhM2: 43, gesClass: "B", gesKgCO2M2: 7,

@@ -527,6 +527,14 @@ function lotInBuildingCandidates(
   });
 }
 
+// NB (tenté puis retiré, 2026-07-02) : repli « résidence » — grappe de DPE
+// d'appartements concordants à une même adresse dans le disque. Le cas réel qui
+// le motivait (T1 40 m² C, 10 Av. du Marsan) s'est révélé être un MARQUEUR
+// PORTAIL ERRONÉ (vraie adresse à ~1,9 km du disque, probablement centré sur
+// l'agence) : aucun canal géographique ne peut le résoudre. Sur 65 annonces
+// réelles, aucun cas positif ne déclenchait le canal → pas de preuve, pas de
+// mise en prod. À re-tenter quand un cas réel avec marqueur FIABLE l'exigera.
+
 /** Place les candidats de repli (probable) devant les non-résolus, dédup par adresse. */
 function promoteCandidates(
   lots: ResolvedAddress[],
