@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import { citycodeFromLatLon, fetchRisks, type RiskItem } from "@empir/core";
+import { fetchRisks, type RiskItem } from "@empir/core";
+import type { RiskLevel } from "@/components/empir/risk-row";
+import { cachedCitycode } from "@/lib/enrichment-cache";
 
-export type RiskLevel = "low" | "medium" | "high" | "info";
+export type { RiskLevel };
 
 export interface RiskRowData {
   label: string;
@@ -53,7 +55,7 @@ export function useRisks(lat: number | undefined, lon: number | undefined): UseR
     setLoading(true);
     (async () => {
       try {
-        const citycode = await citycodeFromLatLon(lat, lon);
+        const citycode = await cachedCitycode(lat, lon);
         if (!citycode) {
           if (!cancelled) setRisks([]);
           return;

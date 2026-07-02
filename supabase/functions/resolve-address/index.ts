@@ -592,13 +592,13 @@ async function resolveAddress(
   // Repli « empreinte DPE » (cf. index.ts §5bis) — conso exacte unique.
   if (ranked[0]?.status === "unresolved") {
     const fp = dpeFingerprintCandidate(input, certs, dist);
-    if (fp) ranked = mergeLotCandidates([fp], ranked, 5);
+    if (fp) ranked = promoteCandidates([fp], ranked, 5);
   }
 
   // Repli « lot dans immeuble » (cf. index.ts §5ter) — marqueur PRÉCIS requis.
   if (precise && ranked[0]?.status === "unresolved") {
     const lots = lotInBuildingCandidates(input, certs, dist, 5);
-    if (lots.length) ranked = mergeLotCandidates(lots, ranked, 5);
+    if (lots.length) ranked = promoteCandidates(lots, ranked, 5);
   }
 
   // Cadastre top-1
@@ -705,6 +705,17 @@ function clamp01(x: number): number {
   return Math.max(0, Math.min(1, x));
 }
 
+/** DPE vérifié d'un candidat (classe + chiffres complets), sinon `undefined`. */
+function toVerifiedDpe(c: AdemeCert): ResolvedAddress["verifiedDpe"] {
+  if (!c.dpeClass || c.dpeKwhM2 == null || c.gesKgCO2M2 == null) return undefined;
+  return {
+    class: c.dpeClass,
+    kwhM2: c.dpeKwhM2,
+    gesKgCO2M2: c.gesKgCO2M2,
+    surfaceM2: c.surface > 0 ? c.surface : undefined,
+  };
+}
+
 // ── Repli « empreinte DPE » (conso exacte unique, cf. index.ts) ────────────
 
 function dpeFingerprintCandidate(
@@ -764,10 +775,7 @@ function dpeFingerprintCandidate(
         ],
       },
     ],
-    verifiedDpe:
-      c.dpeClass && c.dpeKwhM2 != null && c.gesKgCO2M2 != null
-        ? { class: c.dpeClass, kwhM2: c.dpeKwhM2, gesKgCO2M2: c.gesKgCO2M2, surfaceM2: c.surface > 0 ? c.surface : undefined }
-        : undefined,
+    verifiedDpe: toVerifiedDpe(c),
   };
 }
 
@@ -832,17 +840,16 @@ function lotInBuildingCandidates(
   }
   if (!cands.length) return [];
 
-  const better = (a: LotCand, b: LotCand) =>
-    rankLot(a) - rankLot(b) || b.lotFit - a.lotFit || b.d - a.d;
+  // Ordre croissant = meilleur d'abord : nb logements > DPE exact > cohérence surface/lot > proximité.
+  const cmpLot = (a: LotCand, b: LotCand) =>
+    rankLot(b) - rankLot(a) || a.lotFit - b.lotFit || a.d - b.d;
   const best = new Map<string, LotCand>();
   for (const cand of cands) {
     const key = addressKey(cand.cert);
     const cur = best.get(key);
-    if (!cur || better(cand, cur) > 0) best.set(key, cand);
+    if (!cur || cmpLot(cand, cur) < 0) best.set(key, cand);
   }
-  const ordered = [...best.values()].sort(
-    (a, b) => rankLot(b) - rankLot(a) || a.lotFit - b.lotFit || a.d - b.d,
-  );
+  const ordered = [...best.values()].sort(cmpLot);
 
   return ordered.slice(0, limit).map((cand) => {
     const c = cand.cert;
@@ -877,15 +884,12 @@ function lotInBuildingCandidates(
       distanceM: Math.round(cand.d),
       flags: ["lot-in-building"],
       matchBreakdown: breakdown,
-      verifiedDpe:
-        c.dpeClass && c.dpeKwhM2 != null && c.gesKgCO2M2 != null
-          ? { class: c.dpeClass, kwhM2: c.dpeKwhM2, gesKgCO2M2: c.gesKgCO2M2, surfaceM2: c.surface > 0 ? c.surface : undefined }
-          : undefined,
+      verifiedDpe: toVerifiedDpe(c),
     };
   });
 }
 
-function mergeLotCandidates(
+function promoteCandidates(
   lots: ResolvedAddress[],
   ranked: ResolvedAddress[],
   limit: number,
@@ -1024,10 +1028,7 @@ function toResolved(
     distanceM: d != null ? Math.round(d) : undefined,
     flags: decision?.flags.length ? decision.flags : undefined,
     matchBreakdown: breakdown,
-    verifiedDpe:
-      c.dpeClass && c.dpeKwhM2 != null && c.gesKgCO2M2 != null
-        ? { class: c.dpeClass, kwhM2: c.dpeKwhM2, gesKgCO2M2: c.gesKgCO2M2, surfaceM2: c.surface > 0 ? c.surface : undefined }
-        : undefined,
+    verifiedDpe: toVerifiedDpe(c),
   };
 }
 

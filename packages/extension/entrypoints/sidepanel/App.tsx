@@ -124,20 +124,18 @@ export default function App() {
   // puis score prix = position de l'annonce vs médiane comparable.
   const market = useMarket(tabState.listing, analyze.result?.resolvedAddress);
   // Risques Géorisques (naturels + technologiques, avec gravité), côté client.
+  // La donnée est communale : le marqueur de l'annonce (stable pour toute
+  // l'analyse) suffit — évite un re-fetch quand la résolution d'adresse aboutit.
   const risksState = useRisks(
-    analyze.result?.resolvedAddress?.lat ?? tabState.listing?.geo?.lat,
-    analyze.result?.resolvedAddress?.lon ?? tabState.listing?.geo?.lon,
+    tabState.listing?.geo?.lat ?? analyze.result?.resolvedAddress?.lat,
+    tabState.listing?.geo?.lon ?? analyze.result?.resolvedAddress?.lon,
   );
   const quick: QuickAnalysis = useMemo(() => {
     if (!tabState.listing) {
       return { listingPricePerM2: null, marketGapPct: null, market: null, score: null, scoreLabel: "—" };
     }
     if (market.loading) {
-      const ppm2 =
-        tabState.listing.surface && tabState.listing.surface > 0
-          ? Math.round(tabState.listing.price / tabState.listing.surface)
-          : null;
-      return { listingPricePerM2: ppm2, marketGapPct: null, market: null, score: null, scoreLabel: "Calcul…" };
+      return { ...buildQuickAnalysis(tabState.listing, null), scoreLabel: "Calcul…" };
     }
     return buildQuickAnalysis(tabState.listing, market.market);
   }, [tabState.listing, market.market, market.loading]);

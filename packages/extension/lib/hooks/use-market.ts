@@ -1,15 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   buildSaleTimeline,
-  citycodeFromLatLon,
   computeMarketStats,
-  fetchCommuneSales,
   propertySaleHistory,
   type Listing,
   type MarketStats,
   type ResolvedAddress,
   type SaleTimeline,
 } from "@empir/core";
+import { cachedCitycode, cachedCommuneSales } from "@/lib/enrichment-cache";
 
 export interface UseMarket {
   market: MarketStats | null;
@@ -38,10 +37,21 @@ export function useMarket(
   const type = listing?.propertyType;
   const lat = resolvedAddress?.lat || listing?.geo?.lat;
   const lon = resolvedAddress?.lon || listing?.geo?.lon;
+  const address = resolvedAddress?.address;
+
+  // Le state d'onglet est un objet NEUF à chaque broadcast du background : ne
+  // dépendre que des primitives réellement utilisées, sinon l'effet re-télécharge
+  // les CSV DVF (plusieurs Mo) à chaque re-synchronisation sans changement réel.
+  const listingRef = useRef(listing);
+  listingRef.current = listing;
+  const url = listing?.url;
+  const price = listing?.price;
+  const surface = listing?.surface;
 
   useEffect(() => {
+    const cur = listingRef.current;
     // DVF ne couvre que maisons/appartements (pas les immeubles), et il faut un point.
-    if (!listing || (type !== "Appartement" && type !== "Maison") || !lat || !lon) {
+    if (!cur || (type !== "Appartement" && type !== "Maison") || !lat || !lon) {
       setMarket(null);
       setTimeline(null);
       setLoading(false);
@@ -51,7 +61,7 @@ export function useMarket(
     setLoading(true);
     (async () => {
       try {
-        const citycode = await citycodeFromLatLon(lat, lon);
+        const citycode = await cachedCitycode(lat, lon);
         if (!citycode) {
           if (!cancelled) {
             setMarket(null);
@@ -59,16 +69,11 @@ export function useMarket(
           }
           return;
         }
-        const sales = await fetchCommuneSales(citycode);
-        const stats = computeMarketStats(sales, { lat, lon }, type, { surface: listing.surface });
+        const sales = await cachedCommuneSales(citycode);
+        const stats = computeMarketStats(sales, { lat, lon }, type, { surface });
         // Historique du bien : ventes passées à cette adresse + prix affiché aujourd'hui.
-        const history = propertySaleHistory(sales, {
-          address: resolvedAddress?.address,
-          lat,
-          lon,
-          surface: listing.surface,
-        });
-        const tl = buildSaleTimeline(history, listing.price);
+        const history = propertySaleHistory(sales, { address, lat, lon, surface });
+        const tl = buildSaleTimeline(history, cur.price);
         if (!cancelled) {
           setMarket(stats);
           setTimeline(tl);
@@ -85,7 +90,7 @@ export function useMarket(
     return () => {
       cancelled = true;
     };
-  }, [listing, type, lat, lon, resolvedAddress?.address]);
+  }, [url, price, surface, type, lat, lon, address]);
 
   return { market, timeline, loading };
 }

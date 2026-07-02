@@ -20,7 +20,11 @@ export function ComparablePriceCard({
   className,
 }: ComparablePriceCardProps) {
   const showGap = gapPct != null;
-  const gapPositive = (gapPct ?? 0) >= 0;
+  // Palette et libellés dérivés une seule fois du signe de l'écart.
+  const gap =
+    (gapPct ?? 0) >= 0
+      ? { bg: "bg-empir-danger/15", fg: "text-empir-danger", dim: "text-empir-danger/80", sign: "+", word: "au-dessus" }
+      : { bg: "bg-empir-success/15", fg: "text-empir-success", dim: "text-empir-success/80", sign: "−", word: "sous" };
 
   return (
     <div
@@ -45,21 +49,14 @@ export function ComparablePriceCard({
           <span
             className={cn(
               "mt-0.5 inline-flex shrink-0 items-baseline gap-[5px] rounded-[8px] px-[9px] py-1",
-              gapPositive ? "bg-empir-danger/15" : "bg-empir-success/15",
+              gap.bg,
             )}
           >
-            <span
-              className={cn(
-                "text-[12px] font-bold tabular-nums",
-                gapPositive ? "text-empir-danger" : "text-empir-success",
-              )}
-            >
-              {gapPositive ? "+" : "−"}
+            <span className={cn("text-[12px] font-bold tabular-nums", gap.fg)}>
+              {gap.sign}
               {Math.abs(Math.round(gapPct!))}%
             </span>
-            <span className={cn("text-[9px]", gapPositive ? "text-empir-danger/80" : "text-empir-success/80")}>
-              {gapPositive ? "au-dessus" : "sous"} le marché
-            </span>
+            <span className={cn("text-[9px]", gap.dim)}>{gap.word} le marché</span>
           </span>
         )}
       </div>

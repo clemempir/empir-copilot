@@ -132,7 +132,7 @@ export async function resolveAddress(
   // c'est LE certificat de l'annonce — même sans marqueur précis.
   if (ranked[0]?.status === "unresolved") {
     const fp = dpeFingerprintCandidate(input, certs, dist);
-    if (fp) ranked = mergeLotCandidates([fp], ranked, limit);
+    if (fp) ranked = promoteCandidates([fp], ranked, limit);
   }
 
   // ── 5ter. Repli « lot dans immeuble » ─────────────────────────────────────
@@ -141,7 +141,7 @@ export async function resolveAddress(
   // marqueur PRÉCIS (sur un disque, la distance au centroïde n'a aucun sens).
   if (precise && ranked[0]?.status === "unresolved") {
     const lots = lotInBuildingCandidates(input, certs, dist, limit);
-    if (lots.length) ranked = mergeLotCandidates(lots, ranked, limit);
+    if (lots.length) ranked = promoteCandidates(lots, ranked, limit);
   }
 
   // ── 6. Cadastre top-1 ────────────────────────────────────────────────────
@@ -280,6 +280,17 @@ function clamp01(x: number): number {
   return Math.max(0, Math.min(1, x));
 }
 
+/** DPE vérifié d'un candidat (classe + chiffres complets), sinon `undefined`. */
+function toVerifiedDpe(c: AdemeCertificate): ResolvedAddress["verifiedDpe"] {
+  if (!c.dpeClass || c.dpeKwhM2 == null || c.gesKgCO2M2 == null) return undefined;
+  return {
+    class: c.dpeClass,
+    kwhM2: c.dpeKwhM2,
+    gesKgCO2M2: c.gesKgCO2M2,
+    surfaceM2: c.surface > 0 ? c.surface : undefined,
+  };
+}
+
 // ── Repli « empreinte DPE » (conso exacte unique) ──────────────────────────
 
 /**
@@ -349,10 +360,7 @@ function dpeFingerprintCandidate(
         ],
       },
     ],
-    verifiedDpe:
-      c.dpeClass && c.dpeKwhM2 != null && c.gesKgCO2M2 != null
-        ? { class: c.dpeClass, kwhM2: c.dpeKwhM2, gesKgCO2M2: c.gesKgCO2M2, surfaceM2: c.surface > 0 ? c.surface : undefined }
-        : undefined,
+    verifiedDpe: toVerifiedDpe(c),
   };
 }
 
@@ -432,19 +440,17 @@ function lotInBuildingCandidates(
   }
   if (!cands.length) return [];
 
+  // Ordre croissant = meilleur d'abord : nb logements > DPE exact > cohérence surface/lot > proximité.
+  const cmpLot = (a: LotCand, b: LotCand) =>
+    rankLot(b) - rankLot(a) || a.lotFit - b.lotFit || a.d - b.d;
   // Dédup par adresse (meilleur candidat de chaque immeuble).
-  const better = (a: LotCand, b: LotCand) =>
-    rankLot(a) - rankLot(b) || b.lotFit - a.lotFit || b.d - a.d; // > 0 ⇒ a meilleur
   const best = new Map<string, LotCand>();
   for (const cand of cands) {
     const key = addressKey(cand.cert);
     const cur = best.get(key);
-    if (!cur || better(cand, cur) > 0) best.set(key, cand);
+    if (!cur || cmpLot(cand, cur) < 0) best.set(key, cand);
   }
-  // Tri final : nb logements > DPE exact > cohérence surface/lot > proximité.
-  const ordered = [...best.values()].sort(
-    (a, b) => rankLot(b) - rankLot(a) || a.lotFit - b.lotFit || a.d - b.d,
-  );
+  const ordered = [...best.values()].sort(cmpLot);
 
   return ordered.slice(0, limit).map((cand) => {
     const c = cand.cert;
@@ -479,16 +485,13 @@ function lotInBuildingCandidates(
       distanceM: Math.round(cand.d),
       flags: ["lot-in-building"],
       matchBreakdown: breakdown,
-      verifiedDpe:
-        c.dpeClass && c.dpeKwhM2 != null && c.gesKgCO2M2 != null
-          ? { class: c.dpeClass, kwhM2: c.dpeKwhM2, gesKgCO2M2: c.gesKgCO2M2, surfaceM2: c.surface > 0 ? c.surface : undefined }
-          : undefined,
+      verifiedDpe: toVerifiedDpe(c),
     };
   });
 }
 
-/** Place les candidats « lot-immeuble » (probable) devant les non-résolus. */
-function mergeLotCandidates(
+/** Place les candidats de repli (probable) devant les non-résolus, dédup par adresse. */
+function promoteCandidates(
   lots: ResolvedAddress[],
   ranked: ResolvedAddress[],
   limit: number,
@@ -650,9 +653,6 @@ function toResolved(
     distanceM: d != null ? Math.round(d) : undefined,
     flags: decision?.flags.length ? decision.flags : undefined,
     matchBreakdown: breakdown,
-    verifiedDpe:
-      c.dpeClass && c.dpeKwhM2 != null && c.gesKgCO2M2 != null
-        ? { class: c.dpeClass, kwhM2: c.dpeKwhM2, gesKgCO2M2: c.gesKgCO2M2, surfaceM2: c.surface > 0 ? c.surface : undefined }
-        : undefined,
+    verifiedDpe: toVerifiedDpe(c),
   };
 }

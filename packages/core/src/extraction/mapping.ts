@@ -78,7 +78,7 @@ const FRENCH_MONTHS: Record<string, string> = {
   decembre: "12",
 };
 
-function stripAccentsLower(s: string): string {
+export function stripAccentsLower(s: string): string {
   return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 

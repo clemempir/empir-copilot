@@ -1,3 +1,4 @@
+import { stripAccentsLower } from "../extraction/mapping";
 import type { DvfSale, PropertyType, Comparable, MarketStats } from "../types";
 
 function isHousingType(t: string | undefined): t is PropertyType {
@@ -96,10 +97,7 @@ export interface SaleTimeline {
 
 /** Normalise une rue pour comparer (minuscules, sans accents, sans code postal/ville). */
 function normStreet(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+  return stripAccentsLower(s)
     .replace(/\b\d{5}\b.*$/, "") // retire « 40500 Saint-Sever » en fin
     .replace(/[^a-z0-9 ]/g, " ")
     .replace(/\s+/g, " ")
@@ -340,12 +338,15 @@ export async function fetchCommuneSales(
   const years = opts.years ?? DVF_YEARS;
   // DOM/COM : répertoire département à 3 chiffres sur geo-dvf (971-976, 98x)
   const dept = citycode.startsWith("97") || citycode.startsWith("98") ? citycode.slice(0, 3) : citycode.slice(0, 2);
-  const all: DvfSale[] = [];
-  for (const year of years) {
-    const url = `https://files.data.gouv.fr/geo-dvf/latest/csv/${year}/communes/${dept}/${citycode}.csv`;
-    const res = await fetchFn(url);
-    if (!res.ok) continue; // année absente → on continue
-    all.push(...parseDvfCsv(await res.text()));
-  }
-  return all;
+  // Les années sont indépendantes : téléchargements en parallèle (l'ordre du
+  // résultat reste celui de `years`).
+  const perYear = await Promise.all(
+    years.map(async (year) => {
+      const url = `https://files.data.gouv.fr/geo-dvf/latest/csv/${year}/communes/${dept}/${citycode}.csv`;
+      const res = await fetchFn(url);
+      if (!res.ok) return []; // année absente → on continue
+      return parseDvfCsv(await res.text());
+    }),
+  );
+  return perYear.flat();
 }

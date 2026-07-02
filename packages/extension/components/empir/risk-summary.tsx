@@ -57,23 +57,12 @@ export function RiskSummary({ risks, className }: RiskSummaryProps) {
         />
       </button>
 
-      {/* Mis en avant quand replié */}
-      {!open && (
-        <div className="px-3.5 pb-1.5">
-          {featured.map((r) => (
-            <RiskRow key={r.label} {...r} />
-          ))}
-        </div>
-      )}
-
-      {/* Détail complet dans le dropdown */}
-      {open && (
-        <div className="border-t border-empir-line px-3.5 pb-1.5 pt-0.5">
-          {sorted.map((r) => (
-            <RiskRow key={r.label} {...r} />
-          ))}
-        </div>
-      )}
+      {/* Replié : les risques mis en avant ; déplié : le détail complet. */}
+      <div className={cn("px-3.5 pb-1.5", open && "border-t border-empir-line pt-0.5")}>
+        {(open ? sorted : featured).map((r) => (
+          <RiskRow key={r.label} {...r} />
+        ))}
+      </div>
     </div>
   );
 }
