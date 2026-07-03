@@ -14,6 +14,7 @@
 // ============================================================================
 import { execSync } from "node:child_process";
 import { resolveAddress, type ResolverInput } from "../packages/core/src/resolver/index.ts";
+import { detectCommuneDoubt } from "../packages/core/src/extraction/commune-doubt.ts";
 
 const SUPABASE_URL = env("SUPABASE_URL");
 const SERVICE_KEY = env("SUPABASE_SERVICE_KEY");
@@ -56,6 +57,7 @@ async function sb(path: string, opts: RequestInit = {}): Promise<Response> {
 // ── Mapping dossier de cas → ResolverInput ──────────────────────────────────
 
 interface Extracted {
+  description?: string | null;
   propertyType?: string;
   surface?: number | null;
   rooms?: number | null;
@@ -105,6 +107,21 @@ function toInput(x: Extracted): ResolverInput | null {
   };
 }
 
+/** Code postal d'une commune nommée (même département que la commune déclarée). */
+async function postalCodeOf(city: string, declaredPostal: string): Promise<string | null> {
+  try {
+    const dept = declaredPostal.slice(0, 2);
+    const r = await fetch(
+      `https://geo.api.gouv.fr/communes?nom=${encodeURIComponent(city)}&codeDepartement=${dept}&fields=nom,codesPostaux&boost=population&limit=1`,
+    );
+    if (!r.ok) return null;
+    const rows = (await r.json()) as { nom?: string; codesPostaux?: string[] }[];
+    return rows[0]?.codesPostaux?.[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Boucle principale ────────────────────────────────────────────────────────
 
 async function run(): Promise<void> {
@@ -124,8 +141,26 @@ async function run(): Promise<void> {
       patch = { status: "error", error: "extracted sans code postal", algo_version: algoVersion };
     } else {
       try {
+        // Doute « mauvaise commune » : la description contredit la commune
+        // déclarée (agent qui classe le village sur la grande ville).
+        const doubt = detectCommuneDoubt(row.extracted.description ?? undefined, row.extracted.city ?? undefined);
+        if (doubt?.city) {
+          // Commune nommée → on résout dans la BONNE commune.
+          const cp = doubt.postalCode ?? (await postalCodeOf(doubt.city, input.postalCode));
+          if (cp) {
+            input.postalCode = cp;
+            input.city = doubt.city;
+            // Le marqueur pointe la commune déclarée (fausse) → inutilisable.
+            input.geo = undefined;
+          }
+        }
         const candidates = await resolveAddress(input, { withCadastre: true });
-        const top = candidates[0];
+        let top = candidates[0];
+        if (doubt && !doubt.city && top && top.status !== "unresolved") {
+          // Doute sans commune nommée (« à 15 mn de X ») : on n'affirme pas.
+          top = { ...top, status: "unresolved", flags: [...(top.flags ?? []), "commune-doubt" as never] };
+          candidates[0] = top;
+        }
         patch = {
           resolved: top
             ? {
@@ -137,8 +172,11 @@ async function run(): Promise<void> {
                 ademeCertId: top.ademeCertId,
                 parcelId: top.parcelId,
                 flags: top.flags ?? [],
+                communeDoubt: doubt ?? undefined,
+                // Commune corrigée par le doute (utile à la console).
+                resolvedInCity: doubt?.city ? input.city : undefined,
               }
-            : { address: null, confidence: 0, status: "unresolved" },
+            : { address: null, confidence: 0, status: "unresolved", communeDoubt: doubt ?? undefined },
           candidates: candidates.map((c) => ({
             address: c.address,
             confidence: c.confidence,

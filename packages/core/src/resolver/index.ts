@@ -39,8 +39,14 @@ const LOT_BUILDING_RADIUS = 80;
 const CONSO_EXACT = 0.5;
 /** Empreinte DPE : le meilleur match doit se détacher du 2e d'au moins (kWh). */
 const CONSO_GAP = 0.5;
-/** Empreinte DPE : la surface doit aussi coïncider (m²) — la conso seule ne suffit pas. */
+/**
+ * Empreinte DPE : la surface doit aussi coïncider — la conso seule ne suffit pas.
+ * Tolérance RELATIVE (max de 3 m² et 5 %) : à 85 m², un écart de 3,6 m² (4 %)
+ * est du bruit de mesure, pas un autre bien (cas réel vérifié : 87,6 ↔ 84,
+ * conso ET GES exacts, rejeté pour 0,6 m² — parcellai.re le trouvait).
+ */
 const FP_SURFACE_TOL = 3;
+const FP_SURFACE_PCT = 0.05;
 
 /** Marge top1/top2 pour un statut « confirmed ». */
 const MARGIN_CONFIRM = 1.5;
@@ -353,7 +359,7 @@ function dpeFingerprintCandidate(
     if (input.dpeClass && c.dpeClass && c.dpeClass !== input.dpeClass) continue;
     // La conso seule ne fait pas une empreinte : surface ET GES doivent corroborer
     // (sinon deux logements différents partageant une conso banale se confondent).
-    if (Math.abs(c.surface - input.surface) > FP_SURFACE_TOL) continue;
+    if (Math.abs(c.surface - input.surface) > Math.max(FP_SURFACE_TOL, input.surface * FP_SURFACE_PCT)) continue;
     if (input.gesClass && c.gesClass && c.gesClass !== input.gesClass) continue;
     const dConso = Math.abs(c.dpeKwhM2 - target);
     const key = addressKey(c);

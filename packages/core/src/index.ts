@@ -5,6 +5,8 @@ export { detectSite, isListingPage } from "./extraction/sites";
 export { isSelogerListingPage, parseSeloger, parseSelogerHtml } from "./extraction/seloger";
 export { parseBienici } from "./extraction/bienici";
 export { isCityaListingPage, parseCitya } from "./extraction/citya";
+export { detectCommuneDoubt } from "./extraction/commune-doubt";
+export type { CommuneDoubt } from "./extraction/commune-doubt";
 export { geocode, correctedLocation } from "./enrichment/geocode";
 export { parseDvfCsv, computeMarketStats, fetchCommuneSales, DVF_YEARS, haversineM, propertySaleHistory, buildSaleTimeline } from "./enrichment/dvf";
 export type { SaleTimeline } from "./enrichment/dvf";

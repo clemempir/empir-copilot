@@ -111,6 +111,14 @@ const CASES: Case[] = [
     },
     expect: { status: "probable", addressIncludes: "Agnoutine", flag: "dpe-date-fingerprint" },
   },
+  {
+    name: "Général de Lobit — maison 84 F/395 GES F/79, disque 1203 m : empreinte conso exacte, surface 87,6 ↔ 84 (4 %, sous la tolérance relative) malgré un rival à 395,6 (SeLoger 271183891, verdict console « fixed », parcellai.re le trouvait)",
+    input: {
+      postalCode: "40000", surface: 84, dpeClass: "F", dpeKwhM2: 395, gesClass: "F", gesKgCO2M2: 79,
+      propertyType: "Maison", geo: { lat: 43.896909069767446, lon: -0.4915997674418604, radiusM: 1203 },
+    },
+    expect: { status: "probable", addressIncludes: "Lobit", flag: "dpe-fingerprint" },
+  },
   // ── NÉGATIFS : doivent RESTER unresolved (anti-faux-positif des canaux) ──────
   {
     name: "NÉGATIF Porte d'Aire — appart 34 E/250, marqueur SUR le 4 Rue Porte d'Aire (0 m, DPE discordant) : le repli lot-in-building ne doit PAS résoudre un immeuble à 60 m (SeLoger 272186401, vraie adresse 4 Rue Porte d'Aire, verdict console « fixed » 2026-07-03)",
