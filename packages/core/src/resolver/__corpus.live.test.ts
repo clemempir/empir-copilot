@@ -121,6 +121,14 @@ const CASES: Case[] = [
   },
   // ── NÉGATIFS : doivent RESTER unresolved (anti-faux-positif des canaux) ──────
   {
+    name: "NÉGATIF Morlanne — « 2 T2 vendus en immeuble 83 m² » D/223 GES B/6, marqueur précis en ÎLOT DENSE (16 à 0 m, 14bis à 4 m, 18 à 6 m — vrai bien au n° 18) : le numéro est indécidable par marqueur, abstention correcte (SeLoger 261837915, console + BAN 2026-07-03)",
+    input: {
+      postalCode: "40500", surface: 83, dpeClass: "D", dpeKwhM2: 223, gesClass: "B", gesKgCO2M2: 6,
+      propertyType: "Immeuble", geo: { lat: 43.762228992345754, lon: -0.5727451639030721, precise: true },
+    },
+    expect: { status: "unresolved" },
+  },
+  {
     name: "NÉGATIF Porte d'Aire — appart 34 E/250, marqueur SUR le 4 Rue Porte d'Aire (0 m, DPE discordant) : le repli lot-in-building ne doit PAS résoudre un immeuble à 60 m (SeLoger 272186401, vraie adresse 4 Rue Porte d'Aire, verdict console « fixed » 2026-07-03)",
     input: {
       postalCode: "40000", surface: 34, dpeClass: "E", dpeKwhM2: 250, gesClass: "B", gesKgCO2M2: 7,

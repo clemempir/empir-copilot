@@ -756,6 +756,11 @@ function decidePreciseGeo(
   confGeo: number,
   confAttr: number,
 ): Decision {
+  // NB (tenté puis retiré, 2026-07-03) : tolérer l'échelle « lot ⊂ immeuble
+  // annoncé » quand le marqueur est posé sur le bâtiment (« 2 T2 vendus en
+  // immeuble 83 m², cert du lot 39,6 m² à 3 m ») aurait CONFIRMÉ le n° 16…
+  // alors que le vrai bien est au n° 18, à 6 m — îlot dense (16/14bis/18 en
+  // ≤ 6 m), numéro indécidable par marqueur. L'abstention est la bonne réponse.
   const coh = coherence(input, top.cert);
   if (coh === "conflict") {
     // Jamais la géo n'écrase une contradiction DPE.
