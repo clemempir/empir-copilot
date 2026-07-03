@@ -220,6 +220,14 @@ async function run(){
           const full = await biFetch(`https://www.bienici.com/realEstateAd.json?id=${encodeURIComponent(ad.id)}`);
           await sleep(jitter());
 
+          // L'index de recherche renvoie aussi des annonces DÉJÀ RETIRÉES du
+          // marché (vendues/expirées) : lien mort pour la revue → on les saute.
+          if(full?.status?.onTheMarket === false){
+            await markSeen("bienici", ad.id);
+            console.log(`  ∅ hors marché, ignorée: ${ad.id}`);
+            continue;
+          }
+
           const c = mapAd(full);
           const r = await resolve(c.extracted, c.listing_url);
           if(r){

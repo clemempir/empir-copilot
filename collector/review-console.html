@@ -293,7 +293,10 @@ function render(){
     const el=document.createElement("div");
     el.className="qitem"+(c.id===curId?" sel":"");
     el.onclick=()=>select(c.id);
-    const addr = c.resolved?.address || "— non résolu —";
+    // Un cas « unresolved » n'AFFIRME rien : son meilleur candidat n'est qu'une piste.
+    const addr = c.resolved?.status === "unresolved"
+      ? (c.resolved?.address ? "piste : " + c.resolved.address : "— non résolu —")
+      : (c.resolved?.address || "— non résolu —");
     el.innerHTML = `<span class="dot ${verdictDot(c.id)}"></span>
       <div class="qa"><div class="qaddr">${addr}</div>
       <div class="qmeta">${c.portal} · ${c.extracted.propertyType} · ${c.extracted.surface||"?"} m²</div></div>
