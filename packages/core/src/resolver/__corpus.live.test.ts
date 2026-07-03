@@ -121,6 +121,15 @@ const CASES: Case[] = [
   },
   // ── NÉGATIFS : doivent RESTER unresolved (anti-faux-positif des canaux) ──────
   {
+    name: "NÉGATIF Gambetta — T3 66 D/172 GES D/36, disque quartier 1366 m : SIGNATURE BANALE (9 apparts quasi identiques D/165-171 GES 33-36 en ville, dont 2 au GES exact) → indécidable par attributs, abstention correcte. Vraie adresse : 73bis Rue Léon Gambetta, bâtiment LCL (SeLoger 273373421, test extension 2026-07-03)",
+    input: {
+      postalCode: "40000", surface: 66, rooms: 3, dpeClass: "D", dpeKwhM2: 172,
+      gesClass: "D", gesKgCO2M2: 36, propertyType: "Appartement",
+      geo: { lat: 43.89461233333334, lon: -0.51551, radiusM: 1366 },
+    },
+    expect: { status: "unresolved" },
+  },
+  {
     name: "NÉGATIF Morlanne — « 2 T2 vendus en immeuble 83 m² » D/223 GES B/6, marqueur précis en ÎLOT DENSE (16 à 0 m, 14bis à 4 m, 18 à 6 m — vrai bien au n° 18) : le numéro est indécidable par marqueur, abstention correcte (SeLoger 261837915, console + BAN 2026-07-03)",
     input: {
       postalCode: "40500", surface: 83, dpeClass: "D", dpeKwhM2: 223, gesClass: "B", gesKgCO2M2: 6,
