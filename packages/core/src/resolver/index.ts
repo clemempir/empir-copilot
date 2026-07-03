@@ -549,11 +549,39 @@ function lotInBuildingCandidates(
   if (!input.geo) return [];
   if (input.propertyType !== "Appartement" && input.propertyType !== "Immeuble") return [];
 
+  // Si le marqueur est posé SUR un bâtiment (≤ GEO_DECIDE_M) dont la signature
+  // CONTREDIT l'annonce, il désigne ce bâtiment-là : un repli à indice plus
+  // faible (lettre DPE d'un immeuble voisin) n'a pas le droit d'aller résoudre
+  // ailleurs. Cas réel vérifié en console : marqueur à 0 m du 4 Rue Porte
+  // d'Aire (vraie adresse, DPE discordant), le repli proposait un immeuble
+  // concordant à 60 m → fausse adresse à 84 %. Un bâtiment proche mais MUET
+  // (cohérence absente) ne verrouille pas — cas Rozanoff, vérifié juste.
+  let nearest: AdemeCertificate | undefined;
+  let dNearest = Infinity;
+  for (const c of certs) {
+    const d = dist.get(c);
+    if (d != null && d < dNearest) {
+      dNearest = d;
+      nearest = c;
+    }
+  }
+  // …et seulement si ce bâtiment POURRAIT héberger le bien (type compatible) :
+  // une MAISON discordante sous le marqueur d'un appartement (cas Rozanoff,
+  // vérifié juste) n'interdit pas l'immeuble voisin — le bien n'y est pas.
+  const pinnedKey =
+    nearest &&
+    dNearest <= GEO_DECIDE_M &&
+    typeCompatible(input, nearest) !== false &&
+    coherence(input, nearest) === "conflict"
+      ? addressKey(nearest)
+      : null;
+
   const cands: LotCand[] = [];
   for (const c of certs) {
     if (c.buildingType !== "immeuble") continue;
     const d = dist.get(c);
     if (d == null || d > LOT_BUILDING_RADIUS) continue;
+    if (pinnedKey && addressKey(c) !== pinnedKey) continue; // le marqueur désigne un autre bâtiment
     const m = dpeMatch(input, c);
     if (!m.ok) continue;
     if (!lotFitsBuilding(input, c)) continue; // lot trop grand pour ce bâtiment

@@ -605,6 +605,49 @@ describe("resolveAddress — anti-faux-positif (status unresolved)", () => {
     expect(res[0]!.status).toBe("unresolved");
   });
 
+  it("lot-in-building : marqueur SUR un bâtiment discordant → PAS de résolution sur un immeuble voisin", async () => {
+    // Cas réel (SeLoger 272186401) : marqueur à 0 m du vrai bâtiment (DPE
+    // discordant → conflit), un immeuble concordant à ~60 m. Le repli ne doit
+    // pas contredire le marqueur : abstention.
+    const rows = [
+      // Le bâtiment désigné par le marqueur (~2 m) — signature discordante.
+      row({
+        id: "PINNED",
+        address: "4 Rue Porte Test 40500 Saint-Sever",
+        geo: "43.75320,-0.57065",
+        surface: 213,
+        type: "immeuble",
+        dpe: "B",
+        kwh: 90,
+      }),
+      // Immeuble concordant (classe E) à ~60 m — ne doit PAS être promu.
+      row({
+        id: "NEIGHBOR",
+        address: "25 Rue Voisine 40500 Saint-Sever",
+        geo: "43.75370,-0.57090",
+        surfaceImm: 300,
+        surface: 300,
+        apts: 8,
+        type: "immeuble",
+        dpe: "E",
+        kwh: 250,
+      }),
+    ];
+    const res = await resolveAddress(
+      {
+        postalCode: "40500",
+        surface: 34,
+        dpeClass: "E",
+        dpeKwhM2: 250,
+        propertyType: "Appartement",
+        geo: { lat: 43.75321, lon: -0.57066, precise: true },
+      },
+      { fetchFn: makeFetch(rows) },
+    );
+    expect(res[0]!.status).toBe("unresolved");
+    expect(res[0]!.flags ?? []).not.toContain("lot-in-building");
+  });
+
   it("sentinelles portail (dpeClass NS, gesClass VI) = DPE ABSENT, pas un conflit", async () => {
     // Bien'ici renvoie « NS » (non soumis) / « VI » (vierge) quand le diagnostic
     // manque. Une classe hors A-G ne doit jamais produire un conflit systématique :

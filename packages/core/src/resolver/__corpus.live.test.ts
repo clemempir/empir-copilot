@@ -113,6 +113,14 @@ const CASES: Case[] = [
   },
   // ── NÉGATIFS : doivent RESTER unresolved (anti-faux-positif des canaux) ──────
   {
+    name: "NÉGATIF Porte d'Aire — appart 34 E/250, marqueur SUR le 4 Rue Porte d'Aire (0 m, DPE discordant) : le repli lot-in-building ne doit PAS résoudre un immeuble à 60 m (SeLoger 272186401, vraie adresse 4 Rue Porte d'Aire, verdict console « fixed » 2026-07-03)",
+    input: {
+      postalCode: "40000", surface: 34, dpeClass: "E", dpeKwhM2: 250, gesClass: "B", gesKgCO2M2: 7,
+      propertyType: "Appartement", geo: { lat: 43.889936037260206, lon: -0.49789394116909713, precise: true },
+    },
+    expect: { status: "unresolved" },
+  },
+  {
     name: "NÉGATIF Leclerc — maison 104 A/42, marqueur à ~6,7 km : l'empreinte date trouve DEUX maisons jumelles (24d et 26, lotissement diagnostiqué le même jour) → ambiguïté, abstention correcte (Bien'ici 476801858, vraie adresse 24 Av. du Général Leclerc)",
     input: {
       postalCode: "40500", surface: 104, rooms: 5, dpeClass: "A", dpeKwhM2: 42,

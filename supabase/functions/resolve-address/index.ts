@@ -182,7 +182,7 @@ function buildCacheKey(input: ResolverInput): string {
     : "_";
   return [
     // Version d'algo : bumper à chaque changement de logique pour invalider le cache.
-    "v16-type-mislabel-tolerance",
+    "v17-pinned-marker-gate",
     input.postalCode,
     bucket(input.surface, 2),
     bucket(input.dpeKwhM2, 20),
@@ -930,11 +930,31 @@ function lotInBuildingCandidates(
   if (!input.geo) return [];
   if (input.propertyType !== "Appartement" && input.propertyType !== "Immeuble") return [];
 
+  // Marqueur posé SUR un bâtiment (≤ GEO_DECIDE_M) à signature CONTRADICTOIRE
+  // → il désigne CE bâtiment, le repli ne résout pas ailleurs (cf. core index.ts).
+  let nearest: AdemeCert | undefined;
+  let dNearest = Infinity;
+  for (const c of certs) {
+    const d = dist.get(c);
+    if (d != null && d < dNearest) {
+      dNearest = d;
+      nearest = c;
+    }
+  }
+  const pinnedKey =
+    nearest &&
+    dNearest <= GEO_DECIDE_M &&
+    typeCompatible(input, nearest) !== false &&
+    coherence(input, nearest) === "conflict"
+      ? addressKey(nearest)
+      : null;
+
   const cands: LotCand[] = [];
   for (const c of certs) {
     if (c.buildingType !== "immeuble") continue;
     const d = dist.get(c);
     if (d == null || d > LOT_BUILDING_RADIUS) continue;
+    if (pinnedKey && addressKey(c) !== pinnedKey) continue; // le marqueur désigne un autre bâtiment
     const m = dpeMatch(input, c);
     if (!m.ok) continue;
     if (!lotFitsBuilding(input, c)) continue;
