@@ -35,7 +35,7 @@
   .qitem .qaddr{font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .qitem .qmeta{font-size:11px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .dot{width:9px;height:9px;border-radius:50%;flex:none;background:#3a4straddle}
-  .v-ok{background:var(--ok)} .v-bad{background:var(--bad)} .v-fix{background:var(--accent)} .v-na{background:var(--warn)} .v-none{background:#3b4considère}
+  .v-ok{background:var(--ok)} .v-bad{background:var(--bad)} .v-fix{background:var(--accent)} .v-na{background:var(--warn)} .v-off{background:#8a93a6} .v-none{background:#3b465c}
   .pill{font-size:10px;padding:1px 6px;border-radius:10px;border:1px solid var(--line);color:var(--mut);flex:none}
   /* detail */
   .detail{overflow:auto;padding:18px 22px}
@@ -81,6 +81,8 @@
   .vb-bad:hover{background:var(--bad);color:#fff}
   .vb-fix{background:#13233f;border-color:var(--accent);color:#9cc2ff}
   .vb-na{background:var(--warnbg);border-color:var(--warn);color:#e3b95a}
+  .vb-off{background:#1d2433;border-color:#8a93a6;color:#aeb6c7}
+  .vb-off:hover{background:#8a93a6;color:#fff}
   .kbd{font-size:10px;border:1px solid var(--line);border-radius:4px;padding:0 4px;color:var(--mut);margin-left:4px}
   #fixrow{display:none;margin-top:10px;gap:8px}
   #fixrow input{flex:1}
@@ -274,7 +276,7 @@ function saveLabel(id, verdict, correctedAddress, note){
 /* ---------- rendu file ---------- */
 function verdictDot(id){
   const v = labels[id]?.verdict;
-  return {correct:"v-ok",wrong:"v-bad",fixed:"v-fix",unresolvable_ok:"v-na"}[v] || "v-none";
+  return {correct:"v-ok",wrong:"v-bad",fixed:"v-fix",unresolvable_ok:"v-na",offline:"v-off"}[v] || "v-none";
 }
 function passesFilter(c){
   const f = $("#filter").value, v=labels[c.id]?.verdict;
@@ -302,11 +304,13 @@ function render(){
 }
 function updateStats(){
   const vals=Object.values(labels);
-  const done=vals.filter(v=>["correct","wrong","fixed","unresolvable_ok"].includes(v.verdict)).length;
+  const done=vals.filter(v=>["correct","wrong","fixed","unresolvable_ok","offline"].includes(v.verdict)).length;
   const ok=vals.filter(v=>v.verdict==="correct"||v.verdict==="unresolvable_ok").length;
   const bad=vals.filter(v=>v.verdict==="wrong"||v.verdict==="fixed").length;
+  // « offline » = neutre : compté comme revu, exclu du taux (ni juste ni faux).
+  const rated=ok+bad;
   $("#st-done").textContent=done; $("#st-ok").textContent=ok; $("#st-bad").textContent=bad;
-  $("#st-rate").textContent = done? Math.round(ok/done*100)+"%" : "—";
+  $("#st-rate").textContent = rated? Math.round(ok/rated*100)+"%" : "—";
 }
 
 /* ---------- rendu détail ---------- */
@@ -382,6 +386,7 @@ function renderCard(){
         <button class="vbtn vb-bad" onclick="verdict('wrong')">✗ Adresse fausse <span class="kbd">R</span></button>
         <button class="vbtn vb-fix" onclick="showFix()">✎ Corriger l'adresse <span class="kbd">C</span></button>
         <button class="vbtn vb-na"  onclick="verdict('unresolvable_ok')">⊘ Non résoluble (OK) <span class="kbd">N</span></button>
+        <button class="vbtn vb-off" onclick="verdict('offline')">🔗 Annonce plus dispo <span class="kbd">D</span></button>
         <span class="grow"></span>
         <button onclick="nav(-1)">◀ <span class="kbd">←</span></button>
         <button onclick="nav(1)">▶ <span class="kbd">→</span></button>
@@ -392,7 +397,7 @@ function renderCard(){
         <button class="primary" onclick="verdict('fixed')">Enregistrer la correction</button>
       </div>
       <input id="note" type="text" placeholder="Note (optionnel)" value="${lab?.note||''}">
-      <div class="hint">Raccourcis : V valider · R refuser · C corriger · N non-résoluble · ← → naviguer. ${lab?'<b style="color:var(--accent)">— déjà revu : '+lab.verdict+'</b>':''}</div>
+      <div class="hint">Raccourcis : V valider · R refuser · C corriger · N non-résoluble · D annonce plus dispo · ← → naviguer. ${lab?'<b style="color:var(--accent)">— déjà revu : '+lab.verdict+'</b>':''}</div>
     </div>`;
 }
 
@@ -403,7 +408,7 @@ function verdict(v){
   const corrected = v==="fixed" ? ($("#fixaddr")?.value||"") : null;
   if(v==="fixed" && !corrected){ toast("Saisis la vraie adresse d'abord"); showFix(); return; }
   saveLabel(c.id, v, corrected, note);
-  toast({correct:"✓ Validé",wrong:"✗ Refusé",fixed:"✎ Corrigé",unresolvable_ok:"⊘ Abstention OK"}[v]);
+  toast({correct:"✓ Validé",wrong:"✗ Refusé",fixed:"✎ Corrigé",unresolvable_ok:"⊘ Abstention OK",offline:"🔗 Annonce plus disponible"}[v]);
   if($("#autonext").checked) setTimeout(()=>nav(1),180); else renderCard();
 }
 function showFix(){ const f=$("#fixrow"); f.style.display="flex"; $("#fixaddr").focus(); }
@@ -446,6 +451,7 @@ document.addEventListener("keydown",ev=>{
   else if(k==="r") verdict("wrong");
   else if(k==="c") showFix();
   else if(k==="n") verdict("unresolvable_ok");
+  else if(k==="d") verdict("offline");
   else if(ev.key==="ArrowRight") nav(1);
   else if(ev.key==="ArrowLeft") nav(-1);
 });
