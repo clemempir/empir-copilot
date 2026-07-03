@@ -99,6 +99,7 @@
 <header>
   <h1>EMPIR · <span>Console de revue</span></h1>
   <div class="stat">Validés <b id="st-done">0</b>/<b id="st-tot">0</b> · ✓ <b id="st-ok" style="color:#5fd98a">0</b> · ✗ <b id="st-bad" style="color:#f0958a">0</b> · taux <b id="st-rate">—</b></div>
+  <div class="stat" id="st-portals" style="font-size:11px">Fiabilité par plateforme : —</div>
   <div class="grow"></div>
   <label class="stat"><input type="checkbox" id="autonext" checked> avance auto</label>
   <button id="btn-import">Importer cas (JSON)</button>
@@ -109,6 +110,12 @@
 <div class="wrap">
   <div class="queue">
     <div class="qfilter">
+      <select id="portal">
+        <option value="all">Toutes plateformes</option>
+        <option value="bienici">Bien'ici</option>
+        <option value="seloger">SeLoger</option>
+        <option value="leboncoin">Leboncoin</option>
+      </select>
       <select id="filter">
         <option value="all">Tous les cas</option>
         <option value="todo">Non revus</option>
@@ -279,6 +286,8 @@ function verdictDot(id){
   return {correct:"v-ok",wrong:"v-bad",fixed:"v-fix",unresolvable_ok:"v-na",offline:"v-off"}[v] || "v-none";
 }
 function passesFilter(c){
+  const p = $("#portal").value;
+  if(p!=="all" && c.portal!==p) return false;
   const f = $("#filter").value, v=labels[c.id]?.verdict;
   if(f==="all") return true;
   if(f==="todo") return !v;
@@ -314,6 +323,24 @@ function updateStats(){
   const rated=ok+bad;
   $("#st-done").textContent=done; $("#st-ok").textContent=ok; $("#st-bad").textContent=bad;
   $("#st-rate").textContent = rated? Math.round(ok/rated*100)+"%" : "—";
+
+  // Fiabilité PAR PLATEFORME : parmi les cas où l'algo AFFIRME une adresse
+  // (confirmed/probable) et que tu as tranchés — correct vs wrong/fixed.
+  const byPortal={};
+  for(const c of CASES){
+    const v=labels[c.id]?.verdict;
+    if(!v || !["correct","wrong","fixed"].includes(v)) continue;
+    if(!["confirmed","probable"].includes(c.resolved?.status)) continue;
+    const b=byPortal[c.portal] ??= {ok:0,ko:0};
+    if(v==="correct") b.ok++; else b.ko++;
+  }
+  const NAMES={bienici:"Bien'ici",seloger:"SeLoger",leboncoin:"Leboncoin"};
+  const parts=Object.entries(byPortal).map(([p,b])=>{
+    const n=b.ok+b.ko;
+    return `${NAMES[p]??p} <b>${Math.round(b.ok/n*100)}%</b> (${b.ok}/${n})`;
+  });
+  const el=$("#st-portals");
+  if(el) el.innerHTML = parts.length? "Fiabilité : "+parts.join(" · ") : "Fiabilité par plateforme : — (vérifie des adresses affirmées)";
 }
 
 /* ---------- rendu détail ---------- */
@@ -445,6 +472,7 @@ $("#file").onchange=e=>{
   rd.readAsText(f);
 };
 $("#filter").onchange=render;
+$("#portal").onchange=render;
 
 /* clavier */
 document.addEventListener("keydown",ev=>{
