@@ -182,7 +182,7 @@ function buildCacheKey(input: ResolverInput): string {
     : "_";
   return [
     // Version d'algo : bumper à chaque changement de logique pour invalider le cache.
-    "v15-date-fingerprint",
+    "v16-type-mislabel-tolerance",
     input.postalCode,
     bucket(input.surface, 2),
     bucket(input.dpeKwhM2, 20),
@@ -835,10 +835,15 @@ function dpeDateFingerprintCandidate(
     return n;
   };
 
+  // Type contradictoire toléré si conso quasi exacte (± 5 %) — erreur
+  // d'étiquetage du diagnostiqueur (cf. core index.ts).
+  const consoNearExact = (c: AdemeCert) =>
+    input.dpeKwhM2 != null && c.dpeKwhM2 != null && within(c.dpeKwhM2, input.dpeKwhM2, 0.05);
+
   const bestByAddr = new Map<string, AdemeCert>();
   for (const c of certs) {
     if (!c.dpeDate || c.dpeDate !== input.dpeDate) continue;
-    if (typeCompatible(input, c) === false) continue;
+    if (typeCompatible(input, c) === false && !consoNearExact(c)) continue;
     if (input.dpeClass && c.dpeClass && c.dpeClass !== input.dpeClass) continue;
     const gesSteps = letterSteps(input.gesClass, c.gesClass);
     if (gesSteps != null && gesSteps >= GES_CONFLICT_STEPS) continue;

@@ -435,10 +435,17 @@ function dpeDateFingerprintCandidate(
     return n;
   };
 
+  // Tolérance « erreur d'étiquetage » : un type contradictoire n'élimine PAS si
+  // la conso colle quasi exactement (± 5 %) — cas réel vérifié en console : cert
+  // « appartement » de 205 m² (= la maison annoncée), date + conso + GES exacts,
+  // seul le type divergeait (saisie du diagnostiqueur).
+  const consoNearExact = (c: AdemeCertificate) =>
+    input.dpeKwhM2 != null && c.dpeKwhM2 != null && within(c.dpeKwhM2, input.dpeKwhM2, 0.05);
+
   const bestByAddr = new Map<string, AdemeCertificate>();
   for (const c of certs) {
     if (!c.dpeDate || c.dpeDate !== input.dpeDate) continue;
-    if (typeCompatible(input, c) === false) continue;
+    if (typeCompatible(input, c) === false && !consoNearExact(c)) continue;
     if (input.dpeClass && c.dpeClass && c.dpeClass !== input.dpeClass) continue;
     const gesSteps = letterSteps(input.gesClass, c.gesClass);
     if (gesSteps != null && gesSteps >= GES_CONFLICT_STEPS) continue;

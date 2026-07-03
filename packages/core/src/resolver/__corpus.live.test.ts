@@ -102,7 +102,25 @@ const CASES: Case[] = [
     },
     expect: { status: "probable", addressIncludes: "Larron", flag: "dpe-date-fingerprint" },
   },
+  {
+    name: "Rue Agnoutine — maison 209 E/280 GES B/10 : cert quasi identique (date+conso+GES+surface) mais étiqueté « appartement » par le diagnostiqueur — la tolérance d'étiquetage le retrouve (Bien'ici 030055401, verdict console « fixed » 2026-07-03)",
+    input: {
+      postalCode: "40500", surface: 209, rooms: 7, yearBuilt: 1940, dpeClass: "E", dpeKwhM2: 280,
+      gesClass: "B", gesKgCO2M2: 10, dpeDate: "2024-11-28", propertyType: "Maison",
+      geo: { lat: 43.76319033900501, lon: -0.574667773343479, radiusM: 500 },
+    },
+    expect: { status: "probable", addressIncludes: "Agnoutine", flag: "dpe-date-fingerprint" },
+  },
   // ── NÉGATIFS : doivent RESTER unresolved (anti-faux-positif des canaux) ──────
+  {
+    name: "NÉGATIF Leclerc — maison 104 A/42, marqueur à ~6,7 km : l'empreinte date trouve DEUX maisons jumelles (24d et 26, lotissement diagnostiqué le même jour) → ambiguïté, abstention correcte (Bien'ici 476801858, vraie adresse 24 Av. du Général Leclerc)",
+    input: {
+      postalCode: "40500", surface: 104, rooms: 5, dpeClass: "A", dpeKwhM2: 42,
+      gesClass: "A", gesKgCO2M2: 1, dpeDate: "2025-06-18", propertyType: "Maison",
+      geo: { lat: 43.78411062925695, lon: -0.4942946338515174, radiusM: 125 },
+    },
+    expect: { status: "unresolved" },
+  },
   {
     name: "NÉGATIF Marsan — T1 40 C/163 : MARQUEUR PORTAIL ERRONÉ (vraie adresse 10 Av. du Marsan à ~1,9 km du disque — centré agence ?) + DPE du lot absent d'ADEME (2026-06-12 trop récent) → abstention correcte (Bien'ici 52457328, verdict console « fixed »)",
     input: {

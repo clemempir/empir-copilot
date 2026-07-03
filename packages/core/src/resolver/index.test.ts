@@ -515,6 +515,74 @@ describe("resolveAddress — anti-faux-positif (status unresolved)", () => {
     expect(res[0]!.confidence).toBeGreaterThan(75);
   });
 
+  it("empreinte date DPE : type contradictoire toléré si la conso est quasi exacte (erreur d'étiquetage)", async () => {
+    // Cas réel (Bien'ici 030055401) : cert « appartement » de 205 m² = la maison
+    // annoncée — date, conso (280 ↔ 280,1), GES et surface concordent.
+    const rows = [
+      row({
+        id: "MISLABEL",
+        address: "4 Rue Agnoutine 40500 Saint-Sever",
+        geo: "43.7600,-0.5760",
+        surface: 205,
+        type: "appartement", // étiquetage erroné du diagnostiqueur
+        dpe: "E",
+        kwh: 280.1,
+        gesClass: "B",
+        ges: 10,
+        date: "2024-11-28",
+      }),
+      ...noise(6),
+    ];
+    const res = await resolveAddress(
+      {
+        postalCode: "40500",
+        surface: 209,
+        dpeClass: "E",
+        dpeKwhM2: 280,
+        gesClass: "B",
+        gesKgCO2M2: 10,
+        dpeDate: "2024-11-28",
+        propertyType: "Maison",
+        geo: { lat: 43.76319, lon: -0.57466, radiusM: 500 },
+      },
+      { fetchFn: makeFetch(rows) },
+    );
+    expect(res[0]!.address).toContain("Agnoutine");
+    expect(res[0]!.status).toBe("probable");
+    expect(res[0]!.flags).toContain("dpe-date-fingerprint");
+  });
+
+  it("empreinte date DPE : type contradictoire SANS conso quasi exacte → toujours rejeté", async () => {
+    // Le piège historique (date seule → mauvaise maison) ne doit pas revenir :
+    // conso discordante (226 vs 285) + type incompatible = pas d'empreinte.
+    const rows = [
+      row({
+        id: "TRAP2",
+        address: "7 Rue Saint-Jean 40500 Saint-Sever",
+        geo: "43.7590,-0.5740",
+        surface: 240,
+        type: "maison",
+        dpe: "E",
+        kwh: 285,
+        date: "2024-05-28",
+      }),
+      ...noise(6),
+    ];
+    const res = await resolveAddress(
+      {
+        postalCode: "40500",
+        surface: 234,
+        dpeClass: "E",
+        dpeKwhM2: 226,
+        dpeDate: "2024-05-28",
+        propertyType: "Immeuble",
+        geo: { lat: 43.7590, lon: -0.5740, radiusM: 500 },
+      },
+      { fetchFn: makeFetch(rows) },
+    );
+    expect(res[0]!.flags ?? []).not.toContain("dpe-date-fingerprint");
+  });
+
   it("empreinte date DPE : deux adresses plausibles à la même date → ambigu, PAS de résolution", async () => {
     const twin = (id: string, addr: string, geo: string) =>
       row({ id, address: addr, geo, surface: 170, type: "maison", dpe: "B", gesClass: "A", date: "2023-11-15" });
