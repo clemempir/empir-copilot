@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Home } from "lucide-react";
+import { Home, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface SavedListingCardProps {
@@ -9,6 +9,8 @@ export interface SavedListingCardProps {
   score?: number | null;
   photoUrl?: string;
   onClick?: () => void;
+  /** Retire le bien de la liste (icône poubelle). */
+  onRemove?: () => void;
   className?: string;
 }
 
@@ -28,39 +30,54 @@ export function SavedListingCard({
   score,
   photoUrl,
   onClick,
+  onRemove,
   className,
 }: SavedListingCardProps) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <div
       className={cn(
-        "flex w-full items-center gap-3 rounded-empir-card border border-empir-line bg-empir-card p-2.5 text-left transition-colors hover:bg-white/[0.07] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-empir-primary/60",
+        "flex w-full items-center gap-2 rounded-empir-card border border-empir-line bg-empir-card p-2.5 transition-colors hover:bg-white/[0.07]",
         className,
       )}
     >
-      <div className="relative size-[42px] shrink-0 overflow-hidden rounded-[9px] bg-gradient-to-br from-empir-primary/30 to-empir-primary-dark/40">
-        {photoUrl ? (
-          <img src={photoUrl} alt="" className="size-full object-cover" />
-        ) : (
-          <Home className="absolute inset-0 m-auto size-5 text-white/70" />
-        )}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-[12.5px] font-semibold text-empir-text">{title}</div>
-        {meta && <div className="mt-0.5 truncate text-[10.5px] text-empir-muted-2">{meta}</div>}
-      </div>
-      <div className="text-right">
-        {price != null && (
-          <div className="text-[12px] font-semibold tabular-nums text-empir-text">{fmtEur(price)}</div>
-        )}
-        {score != null && (
-          <div className="mt-0.5 inline-flex items-center gap-1 text-[10.5px] text-empir-muted">
-            <span className={cn("size-1.5 rounded-full", scoreColor(score))} />
-            score {score}
-          </div>
-        )}
-      </div>
-    </button>
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-empir-primary/60"
+      >
+        <div className="relative size-[42px] shrink-0 overflow-hidden rounded-[9px] bg-gradient-to-br from-empir-primary/30 to-empir-primary-dark/40">
+          {photoUrl ? (
+            <img src={photoUrl} alt="" className="size-full object-cover" />
+          ) : (
+            <Home className="absolute inset-0 m-auto size-5 text-white/70" />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[12.5px] font-semibold text-empir-text">{title}</div>
+          {meta && <div className="mt-0.5 truncate text-[10.5px] text-empir-muted-2">{meta}</div>}
+        </div>
+        <div className="text-right">
+          {price != null && (
+            <div className="text-[12px] font-semibold tabular-nums text-empir-text">{fmtEur(price)}</div>
+          )}
+          {score != null && (
+            <div className="mt-0.5 inline-flex items-center gap-1 text-[10.5px] text-empir-muted">
+              <span className={cn("size-1.5 rounded-full", scoreColor(score))} />
+              score {score}
+            </div>
+          )}
+        </div>
+      </button>
+      {onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          title="Retirer de la liste"
+          className="grid size-7 shrink-0 place-items-center rounded-[8px] text-empir-muted-2 transition-colors hover:bg-empir-danger/15 hover:text-empir-danger"
+        >
+          <Trash2 className="size-[14px]" strokeWidth={1.8} />
+        </button>
+      )}
+    </div>
   );
 }

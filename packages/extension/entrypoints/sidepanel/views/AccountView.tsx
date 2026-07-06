@@ -34,6 +34,8 @@ export interface AccountViewProps {
     score?: number | null;
     photoUrl?: string;
     onClick?: () => void;
+    /** Retire le bien de la liste (icône poubelle). */
+    onRemove?: () => void;
   }[];
   onBack: () => void;
   onUpgradeClick: () => void;
@@ -179,6 +181,7 @@ export function AccountView({
                 score={b.score}
                 photoUrl={b.photoUrl}
                 onClick={b.onClick}
+                onRemove={b.onRemove}
               />
             ))}
           </div>

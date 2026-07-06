@@ -231,6 +231,7 @@ export default function App() {
           score: s.score,
           photoUrl: s.photo_url ?? undefined,
           onClick: () => window.open(s.listing_url, "_blank"),
+          onRemove: () => void saved.remove(String(s.id)),
         }))}
         onBack={() => setScreen("main")}
         onUpgradeClick={() => undefined}
