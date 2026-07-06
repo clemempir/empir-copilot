@@ -42,6 +42,8 @@ interface ResolverInput {
   apartmentCount?: number;
   propertyType?: "Appartement" | "Maison" | "Immeuble";
   geo?: GeoHint;
+  /** Position géocodée de l'AGENCE (détecteur de marqueur erroné). */
+  agencyGeo?: { lat: number; lon: number };
 }
 
 type ResolveFlag =
@@ -53,7 +55,8 @@ type ResolveFlag =
   | "low-margin"
   | "lot-in-building"
   | "dpe-fingerprint"
-  | "dpe-date-fingerprint";
+  | "dpe-date-fingerprint"
+  | "agency-marker-suspect";
 
 type ResolveStatus = "confirmed" | "probable" | "unresolved";
 
@@ -180,9 +183,13 @@ function buildCacheKey(input: ResolverInput): string {
   const geoBucket = input.geo
     ? `${input.geo.lat.toFixed(4)},${input.geo.lon.toFixed(4)}`
     : "_";
+  // L'agence géocodée change le résultat (marqueur neutralisé ou non).
+  const agencyBucket = input.agencyGeo
+    ? `${input.agencyGeo.lat.toFixed(4)},${input.agencyGeo.lon.toFixed(4)}`
+    : "_";
   return [
     // Version d'algo : bumper à chaque changement de logique pour invalider le cache.
-    "v18-fp-surface-pct",
+    "v19-agency-marker",
     input.postalCode,
     bucket(input.surface, 2),
     bucket(input.dpeKwhM2, 20),
@@ -191,6 +198,7 @@ function buildCacheKey(input: ResolverInput): string {
     bucket(input.landSurface, 20),
     monthBucket(input.dpeDate),
     geoBucket,
+    agencyBucket,
     input.propertyType ?? "_",
   ].join("|");
 }
@@ -540,6 +548,7 @@ function geoDiskCoef(distanceM: number | undefined, radiusM: number): number {
 // ── Orchestration (cf. index.ts) ───────────────────────────────────────────
 
 const PRECISE_GATE_M = 30;
+const AGENCY_MARKER_M = 75; // marqueur ↔ agence géocodée (cf. core index.ts)
 const MARKER_DEMOTE_M = 200;
 const GEO_DECIDE_M = 25;
 const GEO_ISOLATED_M = 100;
@@ -579,7 +588,19 @@ function sanitizeInput(i: ResolverInput): ResolverInput {
 async function resolveAddress(
   rawInput: ResolverInput,
 ): Promise<{ candidates: ResolvedAddress[]; debug: ResolveDebug }> {
-  const input = sanitizeInput(rawInput);
+  let input = sanitizeInput(rawInput);
+
+  // Détecteur « marqueur centré agence » (cf. core index.ts §1bis) : si le
+  // marqueur tombe sur l'agence géocodée, la géo est un leurre → ignorée.
+  let agencyMarker = false;
+  if (input.geo && input.agencyGeo) {
+    const dAgency = distanceM(input.geo.lat, input.geo.lon, input.agencyGeo.lat, input.agencyGeo.lon);
+    if (dAgency <= AGENCY_MARKER_M) {
+      agencyMarker = true;
+      input = { ...input, geo: undefined };
+    }
+  }
+
   const certs = await fetchAdeme(input);
   if (!certs.length) {
     return { candidates: [], debug: { ademeTotal: 0, keptAfterSurfaceFilter: 0, usedLandSurfacePass: false } };
@@ -630,6 +651,10 @@ async function resolveAddress(
     if (lots.length) ranked = promoteCandidates(lots, ranked, 5);
   }
 
+  // Trace du marqueur ignoré (cf. core index.ts).
+  if (agencyMarker) {
+    for (const r of ranked) r.flags = [...(r.flags ?? []), "agency-marker-suspect"];
+  }
 
   // Cadastre top-1
   if (ranked[0] && ranked[0].lat && ranked[0].lon) {

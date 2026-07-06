@@ -48,6 +48,13 @@ export interface Listing {
   apartmentCount?: number;
   /** Localisation approximative (marqueur carte / centre de floutage). */
   geo?: ListingGeo;
+  /** Nom de l'agence / annonceur professionnel si affiché. */
+  agencyName?: string;
+  /**
+   * Adresse postale de l'AGENCE (pas du bien) si affichée. Sert au détecteur
+   * de marqueur erroné : géocodée puis comparée au marqueur carte.
+   */
+  agencyAddress?: string;
   description: string;
   photos: string[];
   publishedAt?: string;

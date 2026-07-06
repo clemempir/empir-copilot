@@ -82,6 +82,19 @@ function readPropertyType(url: string, fallback?: string): PropertyType | undefi
   return toPropertyType(fallback);
 }
 
+/**
+ * Bloc « À propos de l'agence » : nom + adresse postale de l'AGENCE (pas du
+ * bien) — sert au détecteur de marqueur « centré agence » côté résolveur.
+ * Format affiché : « 20 Cr Balguerie Stuttenberg - 33300 Bordeaux ».
+ */
+function readAgency(doc: Document): { name?: string; address?: string } {
+  const name = doc.querySelector(".agency-overview__info-name")?.textContent?.trim() || undefined;
+  const raw = doc.querySelector(".agency-overview__contact-address")?.textContent?.trim();
+  // Normalise le tiret séparateur « rue - CP ville » en virgule (géocodage BAN).
+  const address = raw ? raw.replace(/\s+-\s+(\d{5})/, ", $1").replace(/\s+/g, " ") : undefined;
+  return { name, address };
+}
+
 function readPhotos(doc: Document, primary?: string): string[] {
   const seen = new Set<string>();
   if (primary) seen.add(primary);
@@ -117,6 +130,8 @@ export function parseBienici(doc: Document, url: string): Listing {
   const dpeDate =
     extractDpeDate(doc.body?.textContent ?? "") ?? extractDpeDate(`${dpeText} ${title}`);
 
+  const agency = readAgency(doc);
+
   return {
     url,
     site: "bienici",
@@ -135,6 +150,8 @@ export function parseBienici(doc: Document, url: string): Listing {
     dpeKwhM2,
     gesKgCO2M2,
     dpeDate,
+    agencyName: agency.name,
+    agencyAddress: agency.address,
     description: "",
     photos: readPhotos(doc, image),
     extractedAt: new Date().toISOString(),

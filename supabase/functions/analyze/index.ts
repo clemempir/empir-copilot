@@ -36,6 +36,8 @@ interface Listing {
   dpeDate?: string;
   apartmentCount?: number;
   geo?: { lat: number; lon: number; radiusM?: number; precision?: "gps" | "disk" };
+  agencyName?: string;
+  agencyAddress?: string;
   attributes?: { label: string; value: string }[];
 }
 
@@ -59,6 +61,12 @@ Deno.serve(async (req: Request) => {
   const baseUrl = Deno.env.get("SUPABASE_URL")!;
   const anon = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 
+  // Position géocodée de l'agence (best-effort) : alimente le détecteur de
+  // marqueur « centré agence » du résolveur. Inutile sans marqueur carte.
+  const agencyGeo = body.listing.geo
+    ? await geocodeAgency(body.listing.agencyAddress).catch(() => undefined)
+    : undefined;
+
   // Entrée du résolveur, dérivée de l'annonce — échoée dans `debug` pour le
   // diagnostic côté sidepanel.
   const resolverInput = {
@@ -75,6 +83,7 @@ Deno.serve(async (req: Request) => {
     dpeDate: body.listing.dpeDate,
     apartmentCount: body.listing.apartmentCount,
     geo: body.listing.geo,
+    agencyGeo,
     yearBuilt: extractYearBuilt(body.listing.attributes),
   };
 
@@ -143,6 +152,35 @@ function extractYearBuilt(
     }
   }
   return undefined;
+}
+
+/**
+ * Géocode l'adresse de l'AGENCE (BAN) pour le détecteur de marqueur erroné.
+ * N'accepte qu'un géocodage PRÉCIS (housenumber/street, score correct) : un
+ * résultat « centre-ville » tomberait par hasard près des disques de floutage
+ * centrés sur la commune et créerait des faux positifs.
+ */
+async function geocodeAgency(
+  address: string | undefined,
+): Promise<{ lat: number; lon: number } | undefined> {
+  if (!address) return undefined;
+  const url = `https://data.geopf.fr/geocodage/search?q=${encodeURIComponent(address)}&limit=1`;
+  const res = await fetch(url);
+  if (!res.ok) return undefined;
+  const json = (await res.json()) as {
+    features?: Array<{
+      geometry?: { coordinates?: [number, number] };
+      properties?: { type?: string; score?: number };
+    }>;
+  };
+  const f = json.features?.[0];
+  const coords = f?.geometry?.coordinates;
+  const precision = f?.properties?.type;
+  const score = f?.properties?.score ?? 0;
+  if (!coords || (precision !== "housenumber" && precision !== "street") || score < 0.6) {
+    return undefined;
+  }
+  return { lon: coords[0], lat: coords[1] };
 }
 
 async function fetchGeorisques(lat: number | undefined, lon: number | undefined): Promise<unknown> {

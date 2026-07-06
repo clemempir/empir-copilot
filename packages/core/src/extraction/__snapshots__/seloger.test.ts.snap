@@ -2,6 +2,8 @@
 
 exports[`parseSeloger > snapshot stable (hors extractedAt) sur la fixture réelle 1`] = `
 {
+  "agencyAddress": "97400 SAINT-DENIS",
+  "agencyName": "iad France  Asma Moullan",
   "attributes": [
     {
       "label": "Informations générales",

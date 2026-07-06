@@ -104,3 +104,21 @@ describe("parseBienici (cas d'erreur)", () => {
     expect(parseBienici(doc, url).propertyType).toBe("Maison");
   });
 });
+
+describe("agence Bien'ici (bloc « À propos de l'agence »)", () => {
+  it("extrait nom + adresse de l'agence (adresse normalisée pour le géocodage BAN)", () => {
+    const r = parseBienici(loadDoc(), REAL_URL);
+    expect(r.agencyName).toBe("Côté Particuliers Bordeaux Chartrons");
+    // « 20 Cr Balguerie Stuttenberg - 33300 Bordeaux » → tiret remplacé par virgule
+    expect(r.agencyAddress).toBe("20 Cr Balguerie Stuttenberg, 33300 Bordeaux");
+  });
+
+  it("absents quand la page n'a pas de bloc agence", () => {
+    const doc = docWith(
+      `<script type="application/ld+json">{"@type":"Product","name":"t","offers":{"price":100000}}</script>`,
+    );
+    const r = parseBienici(doc, REAL_URL);
+    expect(r.agencyName).toBeUndefined();
+    expect(r.agencyAddress).toBeUndefined();
+  });
+});

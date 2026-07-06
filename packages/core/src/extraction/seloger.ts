@@ -58,6 +58,14 @@ interface SelogerState {
       classified?: {
         metadata?: { creationDate?: string };
         rawData?: { propertyTypeLabel?: string; propertyType?: string };
+        contactSections?: {
+          provider?: {
+            /** Adresse postale de l'AGENCE (pas du bien). */
+            address?: string;
+            publisherType?: string;
+            intermediaryCard?: { title?: string };
+          };
+        };
         legacyTracking?: {
           products?: Array<{
             price?: number;
@@ -305,6 +313,12 @@ function buildListing(state: SelogerState, url: string, rawSource: string): List
   const categories = sections?.features?.details?.categories ?? [];
   const attrs = buildAttributes(categories);
 
+  // Agence (annonceur pro) : nom + adresse postale — sert au détecteur de
+  // marqueur « centré agence » côté résolveur.
+  const provider = classified.contactSections?.provider;
+  const agencyName = toStr(provider?.intermediaryCard?.title);
+  const agencyAddress = toStr(provider?.address);
+
   return {
     url,
     site: "seloger",
@@ -326,6 +340,8 @@ function buildListing(state: SelogerState, url: string, rawSource: string): List
     gesKgCO2M2,
     dpeDate,
     geo,
+    agencyName,
+    agencyAddress,
     description,
     photos,
     publishedAt: toStr(classified.metadata?.creationDate),

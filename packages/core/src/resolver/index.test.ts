@@ -679,3 +679,74 @@ describe("resolveAddress — anti-faux-positif (status unresolved)", () => {
     expect(res[0]!.flags).not.toContain("conflict");
   });
 });
+
+describe("resolveAddress — détecteur « marqueur centré agence »", () => {
+  // Pathologie réelle (Bien'ici 52457328) : le portail épingle la carte sur
+  // l'ADRESSE DE L'AGENCE, pas sur le bien (parfois à ~2 km). Sans détecteur,
+  // un marqueur « précis » posé sur l'agence peut géo-décider un voisin de
+  // l'agence. Avec `agencyGeo` (adresse de l'agence géocodée), le marqueur
+  // tombant sur l'agence est neutralisé : les attributs cherchent partout.
+  const AGENCY_ROWS = [
+    // Voisin de l'agence, PILE sous le marqueur — le piège du géo-decide.
+    row({
+      id: "TRAP",
+      address: "5 Place de l'Agence 40500 Saint-Sever",
+      geo: "43.75320,-0.57065",
+      surface: 50,
+      type: "maison",
+      dpe: "G",
+    }),
+    // Le VRAI bien, à ~1,9 km : conso exacte (empreinte) le distingue.
+    row({
+      id: "TRUE",
+      address: "12 Rue du Vrai Bien 40500 Saint-Sever",
+      geo: "43.74000,-0.58500",
+      surface: 50,
+      type: "maison",
+      dpe: "G",
+      kwh: 412,
+    }),
+    ...noise(6),
+  ];
+  const AGENCY_INPUT = {
+    postalCode: "40500",
+    surface: 50,
+    dpeClass: "G" as const,
+    dpeKwhM2: 412,
+    propertyType: "Maison" as const,
+    geo: { lat: 43.75321, lon: -0.57066, precise: true },
+  };
+
+  it("SANS agencyGeo (témoin) : le marqueur piégé désigne le voisin de l'agence", async () => {
+    const res = await resolveAddress(AGENCY_INPUT, { fetchFn: makeFetch(AGENCY_ROWS) });
+    expect(res[0]!.address).toContain("Place de l'Agence");
+  });
+
+  it("marqueur à ~7 m de l'agence géocodée → géo neutralisée, l'empreinte conso retrouve le vrai bien + flag", async () => {
+    const res = await resolveAddress(
+      { ...AGENCY_INPUT, agencyGeo: { lat: 43.75325, lon: -0.5707 } },
+      { fetchFn: makeFetch(AGENCY_ROWS) },
+    );
+    expect(res[0]!.address).toContain("Vrai Bien");
+    expect(res[0]!.flags).toContain("agency-marker-suspect");
+    expect(res[0]!.status).not.toBe("unresolved");
+  });
+
+  it("agence LOIN du marqueur (~2 km) → comportement géo inchangé, pas de flag", async () => {
+    const res = await resolveAddress(
+      { ...AGENCY_INPUT, agencyGeo: { lat: 43.7, lon: -0.5 } },
+      { fetchFn: makeFetch(AGENCY_ROWS) },
+    );
+    expect(res[0]!.address).toContain("Place de l'Agence");
+    expect(res[0]!.flags ?? []).not.toContain("agency-marker-suspect");
+  });
+
+  it("agencyGeo sans marqueur carte → aucun effet", async () => {
+    const { geo: _geo, ...noMarker } = AGENCY_INPUT;
+    const res = await resolveAddress(
+      { ...noMarker, agencyGeo: { lat: 43.75325, lon: -0.5707 } },
+      { fetchFn: makeFetch(AGENCY_ROWS) },
+    );
+    expect(res[0]!.flags ?? []).not.toContain("agency-marker-suspect");
+  });
+});

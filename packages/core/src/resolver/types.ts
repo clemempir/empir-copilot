@@ -44,6 +44,14 @@ export interface ResolverInput {
   propertyType?: "Appartement" | "Maison" | "Immeuble";
   /** Localisation approximative issue de l'annonce (marqueur / floutage). */
   geo?: GeoHint;
+  /**
+   * Position géocodée de l'AGENCE (adresse affichée sur l'annonce). Sert au
+   * détecteur de marqueur erroné : certains portails épinglent la carte sur
+   * l'agence, pas sur le bien. Ne fournir que si le géocodage est précis
+   * (housenumber/street) — un géocodage « centre-ville » créerait des faux
+   * positifs avec les disques de floutage centrés sur la commune.
+   */
+  agencyGeo?: { lat: number; lon: number };
 }
 
 /**
@@ -94,7 +102,8 @@ export type ResolveFlag =
   | "low-margin" // écart insuffisant entre les 2 meilleures adresses
   | "lot-in-building" // pas de DPE de lot ; DPE d'immeuble concordant à proximité
   | "dpe-fingerprint" // conso exacte (à l'arrondi) unique dans la commune
-  | "dpe-date-fingerprint"; // date de diagnostic exacte unique dans la commune (échappe au gate géo)
+  | "dpe-date-fingerprint" // date de diagnostic exacte unique dans la commune (échappe au gate géo)
+  | "agency-marker-suspect"; // le marqueur de l'annonce tombe sur l'agence → géo ignorée
 
 /**
  * Statut de résolution (remplace le booléen `resolved`).

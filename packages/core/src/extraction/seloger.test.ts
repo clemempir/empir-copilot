@@ -265,3 +265,16 @@ describe("toPropertyType — immeuble", () => {
     expect(toPropertyType("Maison à vendre")).toBe("Maison");
   });
 });
+
+describe("agence SeLoger (contactSections.provider)", () => {
+  const saintSever = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "__fixtures__/seloger-saint-sever-268828085.html"),
+    "utf8",
+  );
+
+  it("extrait nom + adresse de l'agence depuis l'état __UFRN", () => {
+    const listing = parseSelogerHtml(saintSever, REAL_URL);
+    expect(listing.agencyName).toBe("Zefir");
+    expect(listing.agencyAddress).toBe("50 rue taitbout, 75009 Paris");
+  });
+});

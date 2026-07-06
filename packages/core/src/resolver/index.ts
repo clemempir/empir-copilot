@@ -25,6 +25,13 @@ export interface ResolveAddressOptions {
 
 /** Gate spatial serré pour un marqueur précis (m). */
 const PRECISE_GATE_M = 30;
+/**
+ * Marqueur suspect « centré agence » : distance max marqueur ↔ agence géocodée.
+ * Un portail qui épingle l'agence tombe à ~0-30 m de son géocodage BAN ; 75 m
+ * absorbe le bruit de géocodage sans attraper les biens simplement proches de
+ * l'agence (cas réel fondateur : Bien'ici 52457328, disque à ~1,9 km du bien).
+ */
+const AGENCY_MARKER_M = 75;
 /** Distance au-delà de laquelle un marqueur « précis » est rétrogradé en disque. */
 const MARKER_DEMOTE_M = 200;
 /** Une adresse est « décidée » par le marqueur si elle est sous ce seuil… */
@@ -88,9 +95,29 @@ export async function resolveAddress(
   const fetchFn = opts.fetchFn ?? fetch;
   const limit = opts.limit ?? 5;
   const withCadastre = opts.withCadastre ?? true;
-  const input = sanitizeInput(rawInput);
+  let input = sanitizeInput(rawInput);
 
   if (!input.postalCode) return [];
+
+  // ── 1bis. Détecteur « marqueur centré agence » ───────────────────────────
+  // Certains portails épinglent la carte sur l'ADRESSE DE L'AGENCE, pas sur le
+  // bien (parfois à des kilomètres). Si le marqueur tombe sur l'agence
+  // géocodée, la géo est un leurre : on l'ignore (les canaux attributaires —
+  // empreintes conso/date — cherchent alors dans toute la commune) et on pose
+  // un drapeau d'explicabilité.
+  let agencyMarker = false;
+  if (input.geo && input.agencyGeo) {
+    const dAgency = distanceM(
+      input.geo.lat,
+      input.geo.lon,
+      input.agencyGeo.lat,
+      input.agencyGeo.lon,
+    );
+    if (dAgency <= AGENCY_MARKER_M) {
+      agencyMarker = true;
+      input = { ...input, geo: undefined };
+    }
+  }
 
   const certs = await fetchAdemeCertificates({ postalCode: input.postalCode, fetchFn });
   if (!certs.length) return [];
@@ -157,6 +184,12 @@ export async function resolveAddress(
   if (precise && ranked[0]?.status === "unresolved") {
     const lots = lotInBuildingCandidates(input, certs, dist, limit);
     if (lots.length) ranked = promoteCandidates(lots, ranked, limit);
+  }
+
+  // Trace du marqueur ignoré : l'UI peut expliquer « marqueur probablement
+  // centré sur l'agence, localisation issue des attributs seuls ».
+  if (agencyMarker) {
+    for (const r of ranked) r.flags = [...(r.flags ?? []), "agency-marker-suspect"];
   }
 
   // ── 6. Cadastre top-1 ────────────────────────────────────────────────────
