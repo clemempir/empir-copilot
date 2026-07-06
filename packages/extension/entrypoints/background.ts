@@ -54,15 +54,34 @@ function setPanelEnabled(tabId: number, enabled: boolean): void {
 
 export default defineBackground(() => {
   if (browser.sidePanel && "setPanelBehavior" in browser.sidePanel) {
+    // Ouverture gérée MANUELLEMENT (action.onClicked) : openPanelOnActionClick
+    // ne sait pas ouvrir un panneau désactivé par défaut.
     browser.sidePanel
-      .setPanelBehavior({ openPanelOnActionClick: true })
+      .setPanelBehavior({ openPanelOnActionClick: false })
       .catch(() => {});
     // Désactivé par défaut (nouveaux onglets/fenêtres) — réactivé onglet par
-    // onglet à la détection d'une annonce.
+    // onglet à la détection d'une annonce ou au clic sur l'icône.
     (browser.sidePanel as { setOptions?: (o: { enabled: boolean }) => Promise<void> })
       .setOptions?.({ enabled: false })
       .catch(() => {});
   }
+
+  // Clic sur l'icône = demande explicite : on active et ouvre le panneau sur
+  // CET onglet uniquement (il ne suivra pas dans les autres onglets).
+  browser.action?.onClicked?.addListener((tab) => {
+    const tabId = tab.id;
+    if (tabId == null) return;
+    const sp = browser.sidePanel as
+      | {
+          setOptions?: (o: { tabId: number; path: string; enabled: boolean }) => Promise<void>;
+          open?: (o: { tabId: number }) => Promise<void>;
+        }
+      | undefined;
+    void sp
+      ?.setOptions?.({ tabId, path: "sidepanel.html", enabled: true })
+      .then(() => sp.open?.({ tabId }))
+      .catch(() => {});
+  });
 
   browser.runtime.onMessage.addListener((msg: EmpirRequest, sender, sendResponse) => {
     (async () => {
