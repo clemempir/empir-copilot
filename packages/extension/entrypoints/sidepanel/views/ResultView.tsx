@@ -303,6 +303,7 @@ export function ResultView({
           <ComparablePriceCard
             medianPpm2={quick.market.medianPricePerM2}
             gapPct={quick.marketGapPct}
+            comparables={quick.market.comparables}
             meta={
               comparablesMeta ??
               `${quick.market.sampleSize} ventes · rayon ${Math.round(quick.market.radiusM)} m${
