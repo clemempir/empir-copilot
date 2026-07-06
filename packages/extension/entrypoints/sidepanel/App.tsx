@@ -277,9 +277,12 @@ export default function App() {
             // L'adresse saisie devient la vérité : localisation écrasée +
             // marqueur précis sur le point géocodé → le résolveur cherche les
             // DPE de CETTE adresse (gate serré ~30 m). Relance une analyse.
+            // rawAddress = label BAN canonique (pas la frappe partielle) pour
+            // l'affichage et la comparaison avec l'adresse résolue.
+            void userInput;
             const corrected: Listing = {
               ...l,
-              location: correctedLocation(userInput, point),
+              location: correctedLocation(point.label, point),
               geo: { lat: point.lat, lon: point.lon, precise: true },
             };
             void analyze.run(corrected);

@@ -50,6 +50,18 @@ function splitAddress(addr: string): { line1: string; line2?: string } {
   return { line1: addr };
 }
 
+/** Comparaison d'adresses tolérante (casse, accents, espaces). */
+function sameAddress(a: string, b: string): boolean {
+  const norm = (s: string) =>
+    s
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+  return norm(a) === norm(b);
+}
+
 type PropertyKind = "house" | "apartment" | "immeuble";
 
 const PROPERTY_VISUALS: Record<PropertyKind, { src: string; alt: string; label: string }> = {
@@ -93,12 +105,22 @@ export function ResultView({
   onAddressSubmit,
 }: ResultViewProps) {
   const [editingAddress, setEditingAddress] = useState(false);
-  const address = resolvedAddress?.address ?? listing.location.rawAddress ?? "";
+  // Adresse saisie à la main = vérité : elle reste affichée, et le résultat du
+  // résolveur n'est retenu que s'il concerne EXACTEMENT cette adresse (sinon il
+  // désignerait le voisin le plus proche avec une confiance trompeuse).
+  const manualAddress = listing.location.locationCorrected
+    ? listing.location.rawAddress
+    : undefined;
+  const resolved =
+    manualAddress && resolvedAddress && !sameAddress(resolvedAddress.address, manualAddress)
+      ? undefined
+      : resolvedAddress;
+  const address = manualAddress ?? resolved?.address ?? listing.location.rawAddress ?? "";
   const { line1, line2 } = splitAddress(address);
   // Surface habitable réelle issue du DPE ADEME (colonne « Réel »).
   const realSurface =
-    resolvedAddress?.verifiedDpe?.surfaceM2 != null
-      ? Math.round(resolvedAddress.verifiedDpe.surfaceM2)
+    resolved?.verifiedDpe?.surfaceM2 != null
+      ? Math.round(resolved.verifiedDpe.surfaceM2)
       : null;
   const propVisual = PROPERTY_VISUALS[propertyKind(listing)];
   const mapsHref = address
@@ -107,7 +129,7 @@ export function ResultView({
   // Saisie manuelle proposée seulement quand la localisation n'est pas confirmée.
   const canEditAddress =
     !!onAddressSubmit &&
-    (!resolvedAddress || resolvedAddress.confidence < CONFIDENCE_CONFIRMED);
+    (!!manualAddress || !resolved || resolved.confidence < CONFIDENCE_CONFIRMED);
 
   return (
     <div className="flex h-full flex-col">
@@ -213,7 +235,7 @@ export function ResultView({
                 <AddressEditor
                   nearby={
                     listing.geo ??
-                    (resolvedAddress?.lat ? { lat: resolvedAddress.lat, lon: resolvedAddress.lon } : undefined)
+                    (resolved?.lat ? { lat: resolved.lat, lon: resolved.lon } : undefined)
                   }
                   onCancel={() => setEditingAddress(false)}
                   onSubmit={(point, userInput) => {
@@ -253,24 +275,33 @@ export function ResultView({
                       </a>
                     )}
                   </div>
-                  {(resolvedAddress || canEditAddress) && (
+                  {(resolved || manualAddress || canEditAddress) && (
                     <div className="mt-[9px] flex flex-wrap items-center gap-[6px]">
-                      {resolvedAddress && (
-                        <>
-                          <span
-                            className="rounded-empir-pill px-[7px] py-[2px] text-[10px] font-bold"
-                            style={
-                              resolvedAddress.confidence < 60
-                                ? { background: "rgba(239,68,68,0.14)", color: "#f87171" }
-                                : { background: "rgba(34,197,94,0.14)", color: "#4ade80" }
-                            }
-                          >
-                            {Math.round(resolvedAddress.confidence)}%
-                          </span>
-                          <span className="text-[8.5px] tracking-[0.02em] text-empir-muted-2">
-                            fiabilité localisation
-                          </span>
-                        </>
+                      {manualAddress ? (
+                        <span
+                          className="rounded-empir-pill px-[7px] py-[2px] text-[10px] font-bold"
+                          style={{ background: "rgba(96,165,250,0.14)", color: "#60a5fa" }}
+                        >
+                          adresse saisie
+                        </span>
+                      ) : (
+                        resolved && (
+                          <>
+                            <span
+                              className="rounded-empir-pill px-[7px] py-[2px] text-[10px] font-bold"
+                              style={
+                                resolved.confidence < 60
+                                  ? { background: "rgba(239,68,68,0.14)", color: "#f87171" }
+                                  : { background: "rgba(34,197,94,0.14)", color: "#4ade80" }
+                              }
+                            >
+                              {Math.round(resolved.confidence)}%
+                            </span>
+                            <span className="text-[8.5px] tracking-[0.02em] text-empir-muted-2">
+                              fiabilité localisation
+                            </span>
+                          </>
+                        )
                       )}
                       {canEditAddress && (
                         <button
@@ -279,7 +310,7 @@ export function ResultView({
                           className="flex items-center gap-[3px] text-[8.5px] tracking-[0.02em] text-empir-muted transition-colors hover:text-empir-text"
                         >
                           <PencilLine className="size-[9px]" strokeWidth={1.8} />
-                          Je connais l'adresse
+                          {manualAddress ? "Modifier l'adresse" : "Je connais l'adresse"}
                         </button>
                       )}
                     </div>
@@ -340,8 +371,8 @@ export function ResultView({
           )}
           {listing.rooms != null && <CharRow label="Pièces" shown={`${listing.rooms}`} />}
           {listing.bedrooms != null && <CharRow label="Chambres" shown={`${listing.bedrooms}`} />}
-          {resolvedAddress?.parcelId && (
-            <DataRow label="Cadastre" value={resolvedAddress.parcelId} />
+          {resolved?.parcelId && (
+            <DataRow label="Cadastre" value={resolved.parcelId} />
           )}
         </div>
 
@@ -383,7 +414,7 @@ export function ResultView({
         )}
 
         {/* ─── DPE RÉEL ─── */}
-        {resolvedAddress?.verifiedDpe && (
+        {resolved?.verifiedDpe && (
           <>
             <SectionHeader label="DPE réel" />
             <div
@@ -392,8 +423,8 @@ export function ResultView({
             >
               <DpeBars
                 announced={listing.dpe?.toUpperCase() as DpeClass | undefined}
-                verified={resolvedAddress.verifiedDpe.class as DpeClass}
-                note={`${resolvedAddress.verifiedDpe.kwhM2} kWh/m²/an · ${resolvedAddress.verifiedDpe.gesKgCO2M2} kg CO₂/m²/an`}
+                verified={resolved.verifiedDpe.class as DpeClass}
+                note={`${resolved.verifiedDpe.kwhM2} kWh/m²/an · ${resolved.verifiedDpe.gesKgCO2M2} kg CO₂/m²/an`}
               />
             </div>
           </>
