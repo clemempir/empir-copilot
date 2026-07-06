@@ -188,6 +188,15 @@ const CASES: Case[] = [
     expect: { status: "unresolved" },
   },
   {
+    name: "CONFLIT Pêcheurs — maison 105 D/181 GES B/6, marqueur précis sur le n°7 (vraie adresse, CONFIRMÉE utilisateur 2026-07-06) : le cert ADEME du n°7 contredit l'annonce (237/GES 49/94,6 m² — annonce probablement rediagnostiquée, pas encore dans la base) tandis que le VOISIN n°6 matche presque parfaitement (186/GES 6/100 m²). Le top reste le n°7 (géo) avec statut conflit à 30 % — surtout ne jamais « corriger » vers le n°6 (SeLoger 274023629)",
+    input: {
+      postalCode: "40000", city: "Mont-de-Marsan", surface: 105, rooms: 4, landSurface: 500,
+      dpeClass: "D", dpeKwhM2: 181, gesClass: "B", gesKgCO2M2: 6, propertyType: "Maison",
+      geo: { lat: 43.90258925412181, lon: -0.48367540685205335, precise: true },
+    },
+    expect: { status: "unresolved", addressIncludes: "7 Avenue des Pêcheurs", flag: "conflict" },
+  },
+  {
     name: "NÉGATIF Cahors 300 C/138 GES A — cert voisin est GES C (≠2 classes), pas le même bien (SeLoger 257979085)",
     input: {
       postalCode: "46000", surface: 300, dpeClass: "C", dpeKwhM2: 138, gesClass: "A", gesKgCO2M2: 1,
