@@ -21,12 +21,12 @@ import { ResultView } from "./views/ResultView";
 import { DiagnosticPanel } from "./views/DiagnosticPanel";
 import { SignupView } from "./views/SignupView";
 import { AccountView } from "./views/AccountView";
-import { UpgradeModal } from "./views/UpgradeModal";
 
 type Screen = "main" | "signup" | "account";
 type MainStatus = "idle" | "analyzing" | "result";
 
-const PLAN_LIMIT = 15;
+/** Essais gratuits sans compte (à vie par appareil) — cf. track-usage. */
+const FREE_TRIALS = 3;
 
 export default function App() {
   const auth = useAuth();
@@ -37,7 +37,7 @@ export default function App() {
 
   const [screen, setScreen] = useState<Screen>("main");
   const [tabState, setTabState] = useState<TabState>({ status: "idle" });
-  const [showUpgrade, setShowUpgrade] = useState(false);
+  const [signupContext, setSignupContext] = useState("Compte EMPIR");
 
   // S'attache à l'onglet actif et reste synchronisé avec le background.
   // Le sidepanel n'a pas de `sender.tab.id` côté background : on doit envoyer
@@ -115,10 +115,14 @@ export default function App() {
     void analyze.run(tabState.listing);
   }, [tabState.status, tabState.listing, analyze]);
 
-  // Open upgrade modal when quota is hit
+  // 3 essais gratuits épuisés → mur « créez un compte vérifié » (extension
+  // gratuite et illimitée avec un compte ; pas de plan payant).
   useEffect(() => {
-    if (analyze.result?.status === "quota_exceeded") setShowUpgrade(true);
-  }, [analyze.result]);
+    if (analyze.result?.status === "quota_exceeded" && !auth.user) {
+      setSignupContext("3 analyses gratuites utilisées");
+      setScreen("signup");
+    }
+  }, [analyze.result, auth.user]);
 
   const mainStatus: MainStatus = useMemo(() => {
     if (analyze.loading) return "analyzing";
@@ -147,46 +151,45 @@ export default function App() {
   }, [tabState.listing, market.market, market.loading]);
 
   const usage = analyze.result?.usage ?? {
-    used: profile.profile?.plan === "unlimited" ? 0 : 0,
-    limit: PLAN_LIMIT,
+    used: 0,
+    limit: auth.user ? null : FREE_TRIALS,
     allowed: true,
-    plan: profile.profile?.plan ?? "free",
+    plan: auth.user ? "verified" : "free",
   };
 
   // ─── Screens ─────────────────────────────────────────────────────────────
 
+  // Session ouverte (compte créé+vérifié, connexion, ou reset du mot de
+  // passe) : retour à l'analyse, et si le mur des 3 essais avait bloqué,
+  // l'analyse est relancée — le compte vérifié est illimité.
+  const handleAuthenticated = () => {
+    setScreen("main");
+    if (analyze.result?.status === "quota_exceeded" && tabState.listing) {
+      void analyze.run(tabState.listing);
+    }
+  };
+
+  const authHandlers = {
+    onGoogleSignIn: () => auth.signInWithGoogle(),
+    onSignup: (e: string, p: string) => auth.signUpWithEmail(e, p),
+    onLogin: (e: string, p: string) => auth.signInWithEmail(e, p),
+    onVerifySignup: (e: string, c: string) => auth.verifySignupCode(e, c),
+    onResendCode: (e: string) => auth.resendSignupCode(e),
+    onForgot: (e: string) => auth.requestPasswordReset(e),
+    onResetPassword: (e: string, c: string, p: string) => auth.resetPasswordWithCode(e, c, p),
+    onAuthenticated: handleAuthenticated,
+  };
+
   if (screen === "signup") {
     return (
-      <SignupView
-        onBack={() => setScreen("main")}
-        onGoogleSignIn={async () => {
-          await auth.signInWithGoogle();
-          setScreen("main");
-        }}
-        onEmailSignIn={async (email, password) => {
-          await auth.signUpWithEmail(email, password);
-          setScreen("main");
-        }}
-        onSwitchToLogin={async () => {
-          // Bascule signup → login : reset le screen pour repasser sur le flux
-          // login (à terme une vue dédiée ; pour V1 on garde signup avec
-          // l'option « se connecter » qui appellera signInWithPassword via
-          // l'API auth).
-        }}
-      />
+      <SignupView onBack={() => setScreen("main")} contextLabel={signupContext} {...authHandlers} />
     );
   }
 
   if (screen === "account") {
     if (!auth.user || !profile.profile) {
       return (
-        <SignupView
-          onBack={() => setScreen("main")}
-          contextLabel="Mon compte"
-          onGoogleSignIn={() => auth.signInWithGoogle()}
-          onEmailSignIn={(e, p) => auth.signUpWithEmail(e, p)}
-          onSwitchToLogin={() => undefined}
-        />
+        <SignupView onBack={() => setScreen("main")} contextLabel="Mon compte" {...authHandlers} />
       );
     }
     return (
@@ -197,9 +200,11 @@ export default function App() {
           avatarUrl: (auth.user.user_metadata?.avatar_url as string | undefined) ?? null,
         }}
         plan={{
-          tier: profile.profile.plan,
+          // Compte connecté = vérifié = illimité (l'extension est gratuite ;
+          // la monétisation passe par l'application SaaS séparée).
+          tier: "unlimited",
           analysesUsed: usage.used,
-          analysesLimit: PLAN_LIMIT,
+          analysesLimit: FREE_TRIALS,
         }}
         notifications={notifs.items.map((n) => ({
           id: String(n.id),
@@ -218,7 +223,7 @@ export default function App() {
           onClick: () => window.open(s.listing_url, "_blank"),
         }))}
         onBack={() => setScreen("main")}
-        onUpgradeClick={() => setShowUpgrade(true)}
+        onUpgradeClick={() => undefined}
         onLogout={async () => {
           await auth.signOut();
           setScreen("main");
@@ -240,7 +245,6 @@ export default function App() {
           listing={tabState.listing}
           quick={quick}
           resolvedAddress={analyze.result?.resolvedAddress}
-          usage={{ used: usage.used, limit: usage.limit }}
           saved={saved.isSaved(tabState.listing.url)}
           onSaveClick={() => {
             if (!auth.user) return setScreen("signup");
@@ -282,22 +286,6 @@ export default function App() {
         />
       )}
 
-      {showUpgrade && (
-        <UpgradeModal
-          usage={{ used: usage.used, limit: usage.limit }}
-          onClose={() => setShowUpgrade(false)}
-          onSubmit={async (c) => {
-            if (!auth.user) {
-              setScreen("signup");
-              setShowUpgrade(false);
-              return;
-            }
-            await profile.updateContact(c);
-            setShowUpgrade(false);
-            if (tabState.listing) void analyze.run(tabState.listing);
-          }}
-        />
-      )}
     </div>
   );
 }

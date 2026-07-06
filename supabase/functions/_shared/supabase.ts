@@ -14,9 +14,12 @@ export function serviceClient(): SupabaseClient {
 
 /**
  * Récupère l'user authentifié depuis l'Authorization header (JWT). Renvoie
- * null si la requête est anonyme.
+ * null si la requête est anonyme. `emailConfirmed` reflète la vérification
+ * Supabase (les comptes Google sont confirmés d'office).
  */
-export async function getAuthedUser(req: Request): Promise<{ id: string; email?: string } | null> {
+export async function getAuthedUser(
+  req: Request,
+): Promise<{ id: string; email?: string; emailConfirmed: boolean } | null> {
   const auth = req.headers.get("Authorization");
   if (!auth?.startsWith("Bearer ")) return null;
   const jwt = auth.slice("Bearer ".length);
@@ -30,7 +33,12 @@ export async function getAuthedUser(req: Request): Promise<{ id: string; email?:
   });
   const { data, error } = await client.auth.getUser();
   if (error || !data.user) return null;
-  return { id: data.user.id, email: data.user.email ?? undefined };
+  const u = data.user as { id: string; email?: string; email_confirmed_at?: string; confirmed_at?: string };
+  return {
+    id: u.id,
+    email: u.email ?? undefined,
+    emailConfirmed: Boolean(u.email_confirmed_at ?? u.confirmed_at),
+  };
 }
 
 /** Hash SHA-256 hex truncated à 32 chars — suffisant pour fingerprint device/IP. */

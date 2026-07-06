@@ -39,12 +39,14 @@ export function useProfile(userId: string | null): UseProfile {
     void refresh();
   }, [refresh]);
 
+  // NB : ne touche plus à `plan` — le modèle « compte vérifié = illimité » est
+  // décidé côté serveur (track-usage) ; le client ne peut pas s'auto-upgrader.
   const updateContact = useCallback(
     async (input: { email?: string; phone?: string }) => {
       if (!userId) return;
       await getSupabase()
         .from("users_profile")
-        .update({ email: input.email, phone: input.phone, plan: "unlimited" })
+        .update({ email: input.email, phone: input.phone })
         .eq("id", userId);
       await refresh();
     },

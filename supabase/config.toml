@@ -30,7 +30,10 @@ enable_signup = true
 [auth.email]
 enable_signup = true
 double_confirm_changes = true
-enable_confirmations = false
+# Confirmation d'e-mail OBLIGATOIRE : un compte ne débloque l'illimité
+# qu'après vérification (code à 6 chiffres saisi dans l'extension). À activer
+# aussi en prod : dashboard → Auth → Providers → Email → Confirm email.
+enable_confirmations = true
 
 [auth.external.google]
 enabled = true

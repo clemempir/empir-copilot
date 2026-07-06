@@ -1,52 +1,144 @@
 import { useState } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, MailCheck } from "lucide-react";
 import { EmpirButton, EmpirLogo } from "@/components/empir";
+import { frenchAuthError } from "@/lib/hooks/use-auth";
+
+/**
+ * Écran d'authentification — 5 modes dans une seule vue :
+ *   signup  : création de compte (défaut)
+ *   login   : connexion d'un compte existant
+ *   confirm : saisie du code à 6 chiffres reçu par e-mail (vérification)
+ *   forgot  : demande de réinitialisation du mot de passe
+ *   reset   : saisie du code de récupération + nouveau mot de passe
+ * La vérification se fait ENTIÈREMENT dans l'extension (codes OTP), aucune
+ * page web n'est nécessaire.
+ */
+
+type Mode = "signup" | "login" | "confirm" | "forgot" | "reset";
 
 export interface SignupViewProps {
   onBack: () => void;
   onGoogleSignIn: () => Promise<void> | void;
-  onEmailSignIn: (email: string, password: string) => Promise<void> | void;
-  onSwitchToLogin: () => void;
+  /** Inscription — renvoie true si un code de confirmation a été envoyé. */
+  onSignup: (email: string, password: string) => Promise<{ needsConfirmation: boolean }>;
+  onLogin: (email: string, password: string) => Promise<void>;
+  onVerifySignup: (email: string, code: string) => Promise<void>;
+  onResendCode: (email: string) => Promise<void>;
+  onForgot: (email: string) => Promise<void>;
+  onResetPassword: (email: string, code: string, newPassword: string) => Promise<void>;
+  /** Appelé quand une session est ouverte (compte créé+vérifié ou connexion). */
+  onAuthenticated: () => void;
   contextLabel?: string;
 }
+
+const TITLES: Record<Mode, { title: string; sub: string }> = {
+  signup: {
+    title: "Créez un compte EMPIR",
+    sub: "Compte gratuit et vérifié : analyses illimitées, annonces sauvegardées, alertes.",
+  },
+  login: {
+    title: "Content de vous revoir",
+    sub: "Connectez-vous pour retrouver vos analyses illimitées et vos biens sauvegardés.",
+  },
+  confirm: {
+    title: "Vérifiez votre e-mail",
+    sub: "Saisissez le code à 6 chiffres que nous venons de vous envoyer.",
+  },
+  forgot: {
+    title: "Mot de passe oublié",
+    sub: "Indiquez votre e-mail : nous vous envoyons un code de réinitialisation.",
+  },
+  reset: {
+    title: "Nouveau mot de passe",
+    sub: "Saisissez le code reçu par e-mail et choisissez un nouveau mot de passe.",
+  },
+};
+
+const INPUT_CLS =
+  "h-10 rounded-empir-btn border border-empir-line bg-white/5 px-3 text-[12.5px] text-empir-text placeholder:text-empir-muted-2 focus:border-empir-primary/60 focus:outline-none";
 
 export function SignupView({
   onBack,
   onGoogleSignIn,
-  onEmailSignIn,
-  onSwitchToLogin,
-  contextLabel = "Sauvegarde de l'annonce",
+  onSignup,
+  onLogin,
+  onVerifySignup,
+  onResendCode,
+  onForgot,
+  onResetPassword,
+  onAuthenticated,
+  contextLabel = "Compte EMPIR",
 }: SignupViewProps) {
+  const [mode, setMode] = useState<Mode>("signup");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState<"google" | "email" | null>(null);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
-  const submit = async (e: React.FormEvent) => {
+  const switchMode = (m: Mode) => {
+    setMode(m);
+    setErr(null);
+    setInfo(null);
+    setCode("");
+  };
+
+  const guard = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    setErr(null);
+    setInfo(null);
+    try {
+      await fn();
+    } catch (e) {
+      setErr(frenchAuthError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) return;
-    setBusy("email");
-    setErr(null);
-    try {
-      await onEmailSignIn(email, password);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Erreur inconnue");
-    } finally {
-      setBusy(null);
-    }
+    void guard(async () => {
+      if (mode === "signup") {
+        const { needsConfirmation } = await onSignup(email, password);
+        if (needsConfirmation) switchMode("confirm");
+        else onAuthenticated();
+      } else if (mode === "login") {
+        try {
+          await onLogin(email, password);
+          onAuthenticated();
+        } catch (e) {
+          // Compte jamais vérifié → on enchaîne sur la saisie du code.
+          if (/email not confirmed/i.test(e instanceof Error ? e.message : "")) {
+            await onResendCode(email);
+            switchMode("confirm");
+            setInfo("Votre compte n'était pas vérifié — un nouveau code vient d'être envoyé.");
+            return;
+          }
+          throw e;
+        }
+      } else if (mode === "confirm") {
+        await onVerifySignup(email, code);
+        onAuthenticated();
+      } else if (mode === "forgot") {
+        await onForgot(email);
+        switchMode("reset");
+        setInfo("Code envoyé — vérifiez votre boîte mail (et les spams).");
+      } else if (mode === "reset") {
+        await onResetPassword(email, code, password);
+        onAuthenticated();
+      }
+    });
   };
 
-  const google = async () => {
-    setBusy("google");
-    setErr(null);
-    try {
+  const google = () =>
+    guard(async () => {
       await onGoogleSignIn();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Erreur inconnue");
-    } finally {
-      setBusy(null);
-    }
-  };
+      onAuthenticated();
+    });
+
+  const { title, sub } = TITLES[mode];
 
   return (
     <div className="flex h-full flex-col bg-empir-bg">
@@ -65,69 +157,142 @@ export function SignupView({
       </header>
 
       <div className="flex flex-1 flex-col items-center justify-center px-6 pb-10">
-        <EmpirLogo size="lg" withTagline />
+        {mode === "confirm" ? (
+          <MailCheck className="size-10 text-empir-accent" strokeWidth={1.5} />
+        ) : (
+          <EmpirLogo size="lg" withTagline />
+        )}
         <h1 className="mt-7 text-center text-[18px] font-semibold leading-tight text-empir-text">
-          Créez un compte EMPIR
+          {title}
         </h1>
-        <p className="mt-2 max-w-[280px] text-center text-[12px] text-empir-muted">
-          Sauvegardez vos annonces, débloquez les analyses illimitées et recevez des alertes ciblées.
-        </p>
+        <p className="mt-2 max-w-[280px] text-center text-[12px] text-empir-muted">{sub}</p>
 
-        <EmpirButton
-          type="button"
-          variant="secondary"
-          size="lg"
-          className="mt-6 w-full max-w-[280px]"
-          onClick={google}
-          disabled={busy !== null}
-        >
-          <GoogleGlyph />
-          {busy === "google" ? "Connexion…" : "Continuer avec Google"}
-        </EmpirButton>
+        {(mode === "signup" || mode === "login") && (
+          <>
+            <EmpirButton
+              type="button"
+              variant="secondary"
+              size="lg"
+              className="mt-6 w-full max-w-[280px]"
+              onClick={() => void google()}
+              disabled={busy}
+            >
+              <GoogleGlyph />
+              Continuer avec Google
+            </EmpirButton>
+            <div className="my-5 flex w-full max-w-[280px] items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-empir-muted-2">
+              <span className="h-px flex-1 bg-empir-line" />
+              ou par email
+              <span className="h-px flex-1 bg-empir-line" />
+            </div>
+          </>
+        )}
 
-        <div className="my-5 flex w-full max-w-[280px] items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-empir-muted-2">
-          <span className="h-px flex-1 bg-empir-line" />
-          ou par email
-          <span className="h-px flex-1 bg-empir-line" />
-        </div>
-
-        <form onSubmit={submit} className="flex w-full max-w-[280px] flex-col gap-2.5">
-          <input
-            type="email"
-            placeholder="vous@email.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="h-10 rounded-empir-btn border border-empir-line bg-white/5 px-3 text-[12.5px] text-empir-text placeholder:text-empir-muted-2 focus:border-empir-primary/60 focus:outline-none"
-            required
-          />
-          <input
-            type="password"
-            placeholder="••••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="h-10 rounded-empir-btn border border-empir-line bg-white/5 px-3 text-[12.5px] text-empir-text placeholder:text-empir-muted-2 focus:border-empir-primary/60 focus:outline-none"
-            required
-            minLength={8}
-          />
-          <EmpirButton type="submit" size="lg" className="mt-1" disabled={busy !== null}>
-            {busy === "email" ? "Création…" : "Créer mon compte"}
+        <form onSubmit={submit} className="mt-4 flex w-full max-w-[280px] flex-col gap-2.5">
+          {(mode === "signup" || mode === "login" || mode === "forgot") && (
+            <input
+              type="email"
+              placeholder="vous@email.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className={INPUT_CLS}
+              required
+            />
+          )}
+          {(mode === "confirm" || mode === "reset") && (
+            <input
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="Code à 6 chiffres"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              className={`${INPUT_CLS} text-center tracking-[0.4em]`}
+              required
+              minLength={6}
+              maxLength={6}
+            />
+          )}
+          {(mode === "signup" || mode === "login" || mode === "reset") && (
+            <input
+              type="password"
+              placeholder={mode === "reset" ? "Nouveau mot de passe" : "••••••••"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className={INPUT_CLS}
+              required
+              minLength={8}
+            />
+          )}
+          <EmpirButton type="submit" size="lg" className="mt-1" disabled={busy}>
+            {busy
+              ? "Un instant…"
+              : mode === "signup"
+                ? "Créer mon compte"
+                : mode === "login"
+                  ? "Se connecter"
+                  : mode === "confirm"
+                    ? "Vérifier"
+                    : mode === "forgot"
+                      ? "Envoyer le code"
+                      : "Changer le mot de passe"}
           </EmpirButton>
         </form>
 
-        {err && <p className="mt-3 text-[11px] text-empir-danger">{err}</p>}
+        {err && <p className="mt-3 max-w-[280px] text-center text-[11px] text-empir-danger">{err}</p>}
+        {info && (
+          <p className="mt-3 max-w-[280px] text-center text-[11px] text-empir-accent">{info}</p>
+        )}
 
-        <p className="mt-5 text-center text-[11px] text-empir-muted-2">
-          Déjà un compte ?{" "}
-          <button type="button" onClick={onSwitchToLogin} className="text-empir-accent hover:underline">
-            Se connecter
-          </button>
-        </p>
-        <p className="mt-6 max-w-[280px] text-center text-[9.5px] leading-relaxed text-empir-muted-2">
-          En créant un compte, vous acceptez les CGU EMPIR et notre politique de confidentialité.
-          Aucune donnée n'est revendue.
-        </p>
+        <div className="mt-5 flex flex-col items-center gap-1.5 text-center text-[11px] text-empir-muted-2">
+          {mode === "signup" && (
+            <span>
+              Déjà un compte ?{" "}
+              <LinkBtn onClick={() => switchMode("login")}>Se connecter</LinkBtn>
+            </span>
+          )}
+          {mode === "login" && (
+            <>
+              <span>
+                Pas encore de compte ?{" "}
+                <LinkBtn onClick={() => switchMode("signup")}>Créer un compte</LinkBtn>
+              </span>
+              <LinkBtn onClick={() => switchMode("forgot")}>Mot de passe oublié ?</LinkBtn>
+            </>
+          )}
+          {mode === "confirm" && (
+            <LinkBtn
+              onClick={() =>
+                void guard(async () => {
+                  await onResendCode(email);
+                  setInfo("Nouveau code envoyé.");
+                })
+              }
+            >
+              Renvoyer le code
+            </LinkBtn>
+          )}
+          {(mode === "forgot" || mode === "reset") && (
+            <LinkBtn onClick={() => switchMode("login")}>Retour à la connexion</LinkBtn>
+          )}
+        </div>
+
+        {mode === "signup" && (
+          <p className="mt-6 max-w-[280px] text-center text-[9.5px] leading-relaxed text-empir-muted-2">
+            En créant un compte, vous acceptez les CGU EMPIR et notre politique de confidentialité.
+            Aucune donnée n'est revendue.
+          </p>
+        )}
       </div>
     </div>
+  );
+}
+
+function LinkBtn({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button type="button" onClick={onClick} className="text-empir-accent hover:underline">
+      {children}
+    </button>
   );
 }
 

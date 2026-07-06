@@ -1,11 +1,15 @@
 /**
- * track-usage — enforce le quota freemium 15 analyses / 30 jours.
+ * track-usage — modèle freemium « 3 essais puis compte vérifié » :
+ *
+ *   - ANONYME : 3 analyses gratuites À VIE par appareil (deviceHash).
+ *   - COMPTE VÉRIFIÉ (e-mail confirmé ou Google) : illimité — l'extension est
+ *     gratuite, la monétisation passe par l'application SaaS séparée.
+ *   - Compte NON vérifié : traité comme anonyme (ne débloque rien).
  *
  * POST { deviceHash, listingUrl }
- * Auth optionnelle : si Bearer JWT présent, comptage par user_id ; sinon par
- *   (deviceHash, ip_hash). Le plan 'unlimited' bypass la limite.
- *
- * Réponse : { used, limit, allowed, plan }
+ * Réponse : { used, limit, allowed, plan, reason? }
+ *   plan ∈ { "free", "verified" } ; limit=null quand illimité ;
+ *   reason="account_required" quand les 3 essais sont épuisés.
  *
  * Note : ce endpoint enregistre l'usage UNIQUEMENT si `allowed=true`. Il est
  * appelé en amont de `resolve-address`/`analyze`.
@@ -13,8 +17,8 @@
 import { handleCorsPreflight, corsHeaders } from "../_shared/cors.ts";
 import { serviceClient, getAuthedUser, getClientIp, sha256Short } from "../_shared/supabase.ts";
 
-const FREE_LIMIT = 15;
-const WINDOW_MS = 30 * 24 * 3600 * 1000;
+/** Essais gratuits sans compte — à vie par appareil, pas de fenêtre glissante. */
+const FREE_TRIALS = 3;
 
 interface TrackUsageBody {
   deviceHash: string;
@@ -45,40 +49,35 @@ Deno.serve(async (req: Request) => {
   const supa = serviceClient();
   const user = await getAuthedUser(req);
   const ip = getClientIp(req);
-  const ipHash = ip ? await sha256Short(`${ip}:empir-salt`) : null;
+  const ipSalt = Deno.env.get("IP_HASH_SALT") ?? "empir-salt";
+  const ipHash = ip ? await sha256Short(`${ip}:${ipSalt}`) : null;
 
-  let plan: "free" | "unlimited" = "free";
-  if (user) {
-    const { data } = await supa
-      .from("users_profile")
-      .select("plan")
-      .eq("id", user.id)
-      .maybeSingle();
-    plan = ((data?.plan as "free" | "unlimited" | undefined) ?? "free");
+  // Compte vérifié (e-mail confirmé / Google) → illimité. On log quand même
+  // l'usage pour les statistiques produit.
+  if (user?.emailConfirmed) {
+    if (body.commit !== false) await logUsage(supa, user.id, body, ipHash);
+    return jsonResponse({ used: 0, limit: null, allowed: true, plan: "verified" });
   }
 
-  if (plan === "unlimited") {
-    if (body.commit !== false) await logUsage(supa, user?.id ?? null, body, ipHash);
-    return jsonResponse({ used: 0, limit: Infinity, allowed: true, plan });
-  }
-
-  const since = new Date(Date.now() - WINDOW_MS).toISOString();
-  let usedQuery = supa
+  // Anonyme (ou compte non vérifié) : 3 essais à vie par appareil.
+  const { count } = await supa
     .from("usage_log")
     .select("id", { count: "exact", head: true })
-    .gte("created_at", since);
-  if (user) usedQuery = usedQuery.eq("user_id", user.id);
-  else usedQuery = usedQuery.eq("device_hash", body.deviceHash);
-
-  const { count } = await usedQuery;
+    .eq("device_hash", body.deviceHash);
   const used = count ?? 0;
-  const allowed = used < FREE_LIMIT;
+  const allowed = used < FREE_TRIALS;
 
   if (allowed && body.commit !== false) {
     await logUsage(supa, user?.id ?? null, body, ipHash);
   }
 
-  return jsonResponse({ used: used + (allowed && body.commit !== false ? 1 : 0), limit: FREE_LIMIT, allowed, plan });
+  return jsonResponse({
+    used: used + (allowed && body.commit !== false ? 1 : 0),
+    limit: FREE_TRIALS,
+    allowed,
+    plan: "free",
+    ...(allowed ? {} : { reason: "account_required" }),
+  });
 });
 
 async function logUsage(
