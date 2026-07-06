@@ -6,6 +6,7 @@
     "test": "pnpm -r test",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
+    "broadcast": "node scripts/send-broadcast.mjs",
     "collect": "node collector/bienici-feeder.mjs",
     "ingest-seloger": "tsx collector/seloger-ingest.mts",
     "resolve-pending": "tsx collector/resolve-pending.mts"

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
+import { browser } from "wxt/browser";
 import { getSupabase } from "@/lib/supabase";
 
 export interface UseAuth {
@@ -19,6 +20,13 @@ export interface UseAuth {
   /** Vérifie le code de récupération puis pose le nouveau mot de passe. */
   resetPasswordWithCode(email: string, code: string, newPassword: string): Promise<void>;
   signOut(): Promise<void>;
+}
+
+async function sha256Hex(s: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 /** Traduit les erreurs Supabase Auth courantes en messages utilisateur. */
@@ -75,9 +83,38 @@ export function useAuth(): UseAuth {
       if (error) throw error;
     },
     async signInWithGoogle() {
-      const { error } = await supa.auth.signInWithOAuth({
+      // Flux extension (MV3) : le flux OAuth web classique ne fonctionne pas
+      // dans un sidepanel. On ouvre la fenêtre Google via chrome.identity,
+      // on récupère un id_token, et Supabase l'échange contre une session.
+      // Le nonce lie les deux étapes (anti-rejeu) : Google reçoit son hash,
+      // Supabase vérifie l'original.
+      const clientId = import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID as string | undefined;
+      if (!clientId) {
+        throw new Error("Connexion Google non configurée (VITE_GOOGLE_OAUTH_CLIENT_ID).");
+      }
+      const rawNonce = crypto.randomUUID();
+      const hashedNonce = await sha256Hex(rawNonce);
+      const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+      url.searchParams.set("client_id", clientId);
+      url.searchParams.set("response_type", "id_token");
+      url.searchParams.set("redirect_uri", browser.identity.getRedirectURL());
+      url.searchParams.set("scope", "openid email profile");
+      url.searchParams.set("nonce", hashedNonce);
+      url.searchParams.set("prompt", "select_account");
+
+      const responseUrl = await browser.identity.launchWebAuthFlow({
+        url: url.toString(),
+        interactive: true,
+      });
+      if (!responseUrl) throw new Error("Connexion Google annulée.");
+      const fragment = new URLSearchParams(new URL(responseUrl).hash.slice(1));
+      const idToken = fragment.get("id_token");
+      if (!idToken) throw new Error("Connexion Google annulée.");
+
+      const { error } = await supa.auth.signInWithIdToken({
         provider: "google",
-        options: { redirectTo: typeof location !== "undefined" ? location.origin : undefined },
+        token: idToken,
+        nonce: rawNonce,
       });
       if (error) throw error;
     },

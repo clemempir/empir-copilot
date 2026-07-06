@@ -67,7 +67,7 @@ export async function getDeviceHash(): Promise<string> {
 
 /** Helper pour appeler une Edge Function avec auth optionnel. */
 export async function invokeEdge<T>(
-  fnName: "track-usage" | "resolve-address" | "analyze",
+  fnName: "track-usage" | "resolve-address" | "analyze" | "delete-account",
   body: Record<string, unknown>,
 ): Promise<T> {
   const supa = getSupabase();

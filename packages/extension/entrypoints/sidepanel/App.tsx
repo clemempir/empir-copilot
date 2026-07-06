@@ -8,6 +8,7 @@ import {
   type QuickAnalysis,
 } from "@empir/core";
 import type { TabState } from "@/lib/messages";
+import { invokeEdge } from "@/lib/supabase";
 import { useAuth } from "@/lib/hooks/use-auth";
 import { useAnalyze } from "@/lib/hooks/use-analyze";
 import { useMarket } from "@/lib/hooks/use-market";
@@ -225,6 +226,12 @@ export default function App() {
         onBack={() => setScreen("main")}
         onUpgradeClick={() => undefined}
         onLogout={async () => {
+          await auth.signOut();
+          setScreen("main");
+        }}
+        onDeleteAccount={async () => {
+          // RGPD : suppression côté serveur (admin), puis session locale close.
+          await invokeEdge("delete-account", {});
           await auth.signOut();
           setScreen("main");
         }}

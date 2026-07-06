@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   ArrowLeft,
   Bell,
@@ -7,6 +8,7 @@ import {
   HelpCircle,
   LogOut,
   Settings,
+  Trash2,
 } from "lucide-react";
 import {
   EmpirButton,
@@ -37,6 +39,8 @@ export interface AccountViewProps {
   onBack: () => void;
   onUpgradeClick: () => void;
   onLogout: () => void;
+  /** Suppression définitive du compte (RGPD) — demande une confirmation. */
+  onDeleteAccount?: () => Promise<void> | void;
   onMarkAllRead?: () => void;
   onNotificationClick?: (id: string) => void;
   onNavigate?: (target: "alerts" | "billing" | "prefs" | "help") => void;
@@ -58,11 +62,14 @@ export function AccountView({
   onBack,
   onUpgradeClick,
   onLogout,
+  onDeleteAccount,
   onMarkAllRead,
   onNotificationClick,
   onNavigate,
 }: AccountViewProps) {
   const unread = notifications.filter((n) => !n.read).length;
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   return (
     <div className="flex h-full flex-col bg-empir-bg">
       <header className="flex items-center justify-between px-4 py-3">
@@ -206,7 +213,50 @@ export function AccountView({
             tone="danger"
             onClick={onLogout}
           />
+          {onDeleteAccount && (
+            <MenuItem
+              icon={Trash2}
+              label="Supprimer mon compte"
+              tone="danger"
+              onClick={() => setConfirmingDelete(true)}
+            />
+          )}
         </section>
+
+        {/* Confirmation de suppression (RGPD) — action irréversible. */}
+        {confirmingDelete && onDeleteAccount && (
+          <section className="mt-3 rounded-empir-card border border-empir-danger/40 bg-empir-card p-3.5">
+            <p className="text-[12px] font-semibold text-empir-danger">
+              Supprimer définitivement votre compte ?
+            </p>
+            <p className="mt-1 text-[11px] leading-relaxed text-empir-muted">
+              Vos biens sauvegardés, votre profil et vos notifications seront effacés.
+              Cette action est irréversible.
+            </p>
+            <div className="mt-3 flex gap-2">
+              <EmpirButton
+                type="button"
+                variant="secondary"
+                className="flex-1"
+                onClick={() => setConfirmingDelete(false)}
+                disabled={deleting}
+              >
+                Annuler
+              </EmpirButton>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => {
+                  setDeleting(true);
+                  void Promise.resolve(onDeleteAccount()).finally(() => setDeleting(false));
+                }}
+                className="flex-1 rounded-empir-btn bg-empir-danger/15 px-3 py-2 text-[12px] font-semibold text-empir-danger transition-colors hover:bg-empir-danger/25 disabled:opacity-50"
+              >
+                {deleting ? "Suppression…" : "Supprimer"}
+              </button>
+            </div>
+          </section>
+        )}
 
         <p className="mt-6 text-center text-[9.5px] text-empir-muted-2">
           <BookOpenCheck className="mr-1 inline size-3" />
