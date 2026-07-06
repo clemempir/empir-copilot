@@ -189,7 +189,7 @@ function buildCacheKey(input: ResolverInput): string {
     : "_";
   return [
     // Version d'algo : bumper à chaque changement de logique pour invalider le cache.
-    "v19-agency-marker",
+    "v20-contradiction-veto",
     input.postalCode,
     bucket(input.surface, 2),
     bucket(input.dpeKwhM2, 20),
@@ -625,6 +625,7 @@ async function resolveAddress(
 
   const selectivities = computeSelectivities(input, pool);
   const useDiskCoef = input.geo != null && !precise;
+  // (veto contradictions : cf. hardContradictions + decideAttributes plus bas)
   const scored = pool.map((c) => {
     const s = scoreCertificate(input, c, selectivities);
     if (useDiskCoef) s.score = round3(s.score * geoDiskCoef(dist.get(c), diskRadius));
@@ -1096,7 +1097,13 @@ function decide(
     const confGeo = clamp01(d0 < 15 ? 1 : d0 <= GEO_DECIDE_M ? 0.85 : 0.6) * (decided ? 1 : 0.7);
     decision = decidePreciseGeo(input, top, d0, confGeo, confAttr);
   } else {
-    decision = decideAttributes(margin, strong, confAttr, coherence(input, top.cert));
+    decision = decideAttributes(
+      margin,
+      strong,
+      confAttr,
+      coherence(input, top.cert),
+      hardContradictions(top),
+    );
   }
 
   // Un candidat alternatif ne peut pas afficher plus de confiance que le top :
@@ -1139,15 +1146,34 @@ function decidePreciseGeo(input: ResolverInput, top: Scored, d0: number, confGeo
   };
 }
 
+/**
+ * Contradictions « dures » d'un candidat (cf. core index.ts) : facteurs connus
+ * des deux côtés et incompatibles (sim 0). ≥ 2 ⇒ autre bien, veto.
+ */
+function hardContradictions(s: Scored): number {
+  const seen = new Set<string>();
+  for (const item of s.breakdown) {
+    for (const f of item.factors ?? []) {
+      if (f.expected != null && f.actual != null && f.similarity === 0) seen.add(f.criterion);
+    }
+  }
+  return seen.size;
+}
+
 function decideAttributes(
   margin: number,
   strong: number,
   confAttr: number,
   coh: Coherence,
+  hardConflicts: number,
 ): Decision {
   const confidence = Math.round(confAttr * 100);
   if (coh === "conflict") {
     return { status: "unresolved", confidence: Math.min(confidence, 30), flags: ["conflict"] };
+  }
+  // Veto contradictions : ≥ 2 attributs connus incompatibles → autre bien.
+  if (hardConflicts >= 2) {
+    return { status: "unresolved", confidence: Math.min(confidence, 40), flags: ["conflict"] };
   }
   if (margin >= MARGIN_CONFIRM && strong >= 1) {
     // « Confirmed » = affiché comme vérifié : jamais sous 85 (cf. index.ts).

@@ -750,3 +750,92 @@ describe("resolveAddress — détecteur « marqueur centré agence »", () => {
     expect(res[0]!.flags ?? []).not.toContain("agency-marker-suspect");
   });
 });
+
+describe("resolveAddress — veto contradictions (≥ 2 attributs connus incompatibles)", () => {
+  /** Bruit DANS le disque du marqueur (vivier réaliste pour la sélectivité). */
+  const noiseInDisk = (n: number) =>
+    Array.from({ length: n }, (_, i) =>
+      row({
+        id: `ND${i}`,
+        address: `${i} Rue du Bourg 40500 Saint-Sever`,
+        geo: `43.762${i},-0.574${i % 10}`,
+        surface: 60 + i * 5,
+        type: i % 2 ? "maison" : "appartement",
+        dpe: "D",
+        kwh: 210 + i,
+        year: 1960 + i,
+      }),
+    );
+
+  // Cas réel fondateur (Leboncoin 3222487629 = Marsan bis) : dans le disque,
+  // un cert matche conso≈ (163→158,3) + surface (40→39,1) mais contredit le
+  // GES (B↔A) ET l'année (1975↔1900). Sans veto : « probable 79 % » — faux
+  // positif. Deux contradictions dures = autre bien → abstention.
+  it("conso+surface coïncident mais GES et année contredisent → unresolved + conflict", async () => {
+    const rows = [
+      row({
+        id: "TRAP",
+        address: "4 Place du Piège 40500 Saint-Sever",
+        geo: "43.7640,-0.5740",
+        surface: 39.1,
+        type: "appartement",
+        dpe: "C",
+        kwh: 158.3,
+        gesClass: "A",
+        ges: 2,
+        year: 1900,
+      }),
+      ...noiseInDisk(8),
+    ];
+    const res = await resolveAddress(
+      {
+        postalCode: "40500",
+        surface: 40,
+        rooms: 2,
+        yearBuilt: 1975,
+        dpeClass: "C",
+        dpeKwhM2: 163,
+        gesClass: "B",
+        propertyType: "Appartement",
+        geo: { lat: 43.763416, lon: -0.5744454, radiusM: 600, precision: "disk" },
+      },
+      { fetchFn: makeFetch(rows) },
+    );
+    expect(res[0]!.status).toBe("unresolved");
+    expect(res[0]!.flags).toContain("conflict");
+    expect(res[0]!.confidence).toBeLessThanOrEqual(40);
+  });
+
+  it("UNE seule contradiction (GES à 1 classe) ne suffit pas à bloquer un match par ailleurs net", async () => {
+    const rows = [
+      row({
+        id: "OK",
+        address: "9 Rue Nette 40500 Saint-Sever",
+        geo: "43.7640,-0.5740",
+        surface: 40,
+        type: "appartement",
+        dpe: "C",
+        kwh: 163,
+        gesClass: "A", // 1 écart — l'annonce dit B — seul accroc
+        ges: 2,
+        year: 1975,
+      }),
+      ...noiseInDisk(8),
+    ];
+    const res = await resolveAddress(
+      {
+        postalCode: "40500",
+        surface: 40,
+        yearBuilt: 1975,
+        dpeClass: "C",
+        dpeKwhM2: 163,
+        gesClass: "B",
+        propertyType: "Appartement",
+        geo: { lat: 43.763416, lon: -0.5744454, radiusM: 600, precision: "disk" },
+      },
+      { fetchFn: makeFetch(rows) },
+    );
+    expect(res[0]!.address).toContain("Nette");
+    expect(res[0]!.status).not.toBe("unresolved");
+  });
+});

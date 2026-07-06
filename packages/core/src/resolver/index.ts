@@ -760,7 +760,13 @@ function decide(
       clamp01(d0 < 15 ? 1 : d0 <= GEO_DECIDE_M ? 0.85 : 0.6) * (decided ? 1 : 0.7);
     decision = decidePreciseGeo(input, top, d0, confGeo, confAttr);
   } else {
-    decision = decideAttributes(margin, strong, confAttr, coherence(input, top.cert));
+    decision = decideAttributes(
+      margin,
+      strong,
+      confAttr,
+      coherence(input, top.cert),
+      hardContradictions(top),
+    );
   }
 
   // Construit la liste : top d'abord, puis le reste par score. Un candidat
@@ -823,16 +829,40 @@ function decidePreciseGeo(
   };
 }
 
+/**
+ * Contradictions « dures » d'un candidat : facteurs dont la valeur est CONNUE
+ * des deux côtés (annonce ET certificat) et franchement incompatible (sim 0).
+ * Un cert peut matcher conso≈+surface par coïncidence dans le disque ; DEUX
+ * attributs connus qui le contredisent = ce n'est pas le même bien. Cas réel
+ * fondateur (Leboncoin 3222487629) : 163 → 158,3 kWh jugé « proche », mais
+ * GES B↔A ET année 1975↔1900 → l'algo confirmait un faux positif à 79 %.
+ */
+function hardContradictions(s: ScoredCertificate): number {
+  const seen = new Set<string>();
+  for (const item of s.breakdown) {
+    for (const f of item.factors ?? []) {
+      if (f.expected != null && f.actual != null && f.similarity === 0) seen.add(f.criterion);
+    }
+  }
+  return seen.size;
+}
+
 /** Décision sans marqueur précis : ce sont les attributs qui tranchent. */
 function decideAttributes(
   margin: number,
   strong: number,
   confAttr: number,
   coh: Coherence,
+  hardConflicts: number,
 ): Decision {
   const confidence = Math.round(confAttr * 100);
   if (coh === "conflict") {
     return { status: "unresolved", confidence: Math.min(confidence, 30), flags: ["conflict"] };
+  }
+  // Veto contradictions : ≥ 2 attributs connus incompatibles → autre bien,
+  // quelle que soit la marge du score.
+  if (hardConflicts >= 2) {
+    return { status: "unresolved", confidence: Math.min(confidence, 40), flags: ["conflict"] };
   }
   if (margin >= MARGIN_CONFIRM && strong >= 1) {
     // « Confirmed » = on l'affiche comme vérifié : jamais sous 85.
