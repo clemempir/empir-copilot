@@ -1,11 +1,9 @@
 import { Search } from "lucide-react";
-import { EmpirLogo } from "@/components/empir";
 
 export function IdleView() {
   return (
     <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-      <EmpirLogo size="lg" withTagline />
-      <div className="mt-10 flex size-16 items-center justify-center rounded-full bg-empir-primary/15">
+      <div className="flex size-16 items-center justify-center rounded-full bg-empir-primary/15">
         <Search className="size-7 text-empir-accent" />
       </div>
       <h2 className="mt-5 text-[15px] font-semibold text-empir-text">
