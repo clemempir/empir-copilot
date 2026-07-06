@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ArrowLeft, MailCheck } from "lucide-react";
-import { EmpirButton, EmpirLogo } from "@/components/empir";
+import { EmpirButton } from "@/components/empir";
 import { frenchAuthError } from "@/lib/hooks/use-auth";
 
 /**
@@ -157,12 +157,10 @@ export function SignupView({
       </header>
 
       <div className="flex flex-1 flex-col items-center justify-center px-6 pb-10">
-        {mode === "confirm" ? (
-          <MailCheck className="size-10 text-empir-accent" strokeWidth={1.5} />
-        ) : (
-          <EmpirLogo size="lg" withTagline />
+        {mode === "confirm" && (
+          <MailCheck className="mb-5 size-10 text-empir-accent" strokeWidth={1.5} />
         )}
-        <h1 className="mt-7 text-center text-[18px] font-semibold leading-tight text-empir-text">
+        <h1 className="text-center text-[18px] font-semibold leading-tight text-empir-text">
           {title}
         </h1>
         <p className="mt-2 max-w-[280px] text-center text-[12px] text-empir-muted">{sub}</p>
