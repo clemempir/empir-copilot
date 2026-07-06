@@ -115,12 +115,17 @@ export function ResultView({
     manualAddress && resolvedAddress && !sameAddress(resolvedAddress.address, manualAddress)
       ? undefined
       : resolvedAddress;
-  const address = manualAddress ?? resolved?.address ?? listing.location.rawAddress ?? "";
+  // N'afficher que ce que l'algo ASSUME : un top « unresolved » est un candidat
+  // de travail, pas une adresse — l'afficher en grand tromperait (cas réel :
+  // maison sans DPE → l'adresse d'un voisin s'affichait avec un badge 30 %).
+  const resolvedOk = resolved && resolved.status !== "unresolved" ? resolved : undefined;
+  const unresolvedCandidate = !manualAddress && !resolvedOk && !!resolvedAddress;
+  const address = manualAddress ?? resolvedOk?.address ?? listing.location.rawAddress ?? "";
   const { line1, line2 } = splitAddress(address);
   // Surface habitable réelle issue du DPE ADEME (colonne « Réel »).
   const realSurface =
-    resolved?.verifiedDpe?.surfaceM2 != null
-      ? Math.round(resolved.verifiedDpe.surfaceM2)
+    resolvedOk?.verifiedDpe?.surfaceM2 != null
+      ? Math.round(resolvedOk.verifiedDpe.surfaceM2)
       : null;
   const propVisual = PROPERTY_VISUALS[propertyKind(listing)];
   const mapsHref = address
@@ -129,7 +134,7 @@ export function ResultView({
   // Saisie manuelle proposée seulement quand la localisation n'est pas confirmée.
   const canEditAddress =
     !!onAddressSubmit &&
-    (!!manualAddress || !resolved || resolved.confidence < CONFIDENCE_CONFIRMED);
+    (!!manualAddress || !resolvedOk || resolvedOk.confidence < CONFIDENCE_CONFIRMED);
 
   return (
     <div className="flex h-full flex-col">
@@ -275,7 +280,7 @@ export function ResultView({
                       </a>
                     )}
                   </div>
-                  {(resolved || manualAddress || canEditAddress) && (
+                  {(resolved || manualAddress || canEditAddress || unresolvedCandidate) && (
                     <div className="mt-[9px] flex flex-wrap items-center gap-[6px]">
                       {manualAddress ? (
                         <span
@@ -284,25 +289,35 @@ export function ResultView({
                         >
                           adresse saisie
                         </span>
-                      ) : (
-                        resolved && (
-                          <>
-                            <span
-                              className="rounded-empir-pill px-[7px] py-[2px] text-[10px] font-bold"
-                              style={
-                                resolved.confidence < 60
-                                  ? { background: "rgba(239,68,68,0.14)", color: "#f87171" }
-                                  : { background: "rgba(34,197,94,0.14)", color: "#4ade80" }
-                              }
-                            >
-                              {Math.round(resolved.confidence)}%
-                            </span>
-                            <span className="text-[8.5px] tracking-[0.02em] text-empir-muted-2">
-                              fiabilité localisation
-                            </span>
-                          </>
-                        )
-                      )}
+                      ) : resolvedOk ? (
+                        <>
+                          <span
+                            className="rounded-empir-pill px-[7px] py-[2px] text-[10px] font-bold"
+                            style={
+                              resolvedOk.confidence < 60
+                                ? { background: "rgba(239,68,68,0.14)", color: "#f87171" }
+                                : { background: "rgba(34,197,94,0.14)", color: "#4ade80" }
+                            }
+                          >
+                            {Math.round(resolvedOk.confidence)}%
+                          </span>
+                          <span className="text-[8.5px] tracking-[0.02em] text-empir-muted-2">
+                            fiabilité localisation
+                          </span>
+                        </>
+                      ) : unresolvedCandidate ? (
+                        <>
+                          <span
+                            className="rounded-empir-pill px-[7px] py-[2px] text-[10px] font-bold"
+                            style={{ background: "rgba(239,68,68,0.14)", color: "#f87171" }}
+                          >
+                            adresse non identifiée
+                          </span>
+                          <span className="text-[8.5px] tracking-[0.02em] text-empir-muted-2">
+                            aucun résultat assez fiable
+                          </span>
+                        </>
+                      ) : null}
                       {canEditAddress && (
                         <button
                           type="button"
@@ -371,8 +386,8 @@ export function ResultView({
           )}
           {listing.rooms != null && <CharRow label="Pièces" shown={`${listing.rooms}`} />}
           {listing.bedrooms != null && <CharRow label="Chambres" shown={`${listing.bedrooms}`} />}
-          {resolved?.parcelId && (
-            <DataRow label="Cadastre" value={resolved.parcelId} />
+          {resolvedOk?.parcelId && (
+            <DataRow label="Cadastre" value={resolvedOk.parcelId} />
           )}
         </div>
 
@@ -414,7 +429,7 @@ export function ResultView({
         )}
 
         {/* ─── DPE RÉEL ─── */}
-        {resolved?.verifiedDpe && (
+        {resolvedOk?.verifiedDpe && (
           <>
             <SectionHeader label="DPE réel" />
             <div
@@ -423,8 +438,8 @@ export function ResultView({
             >
               <DpeBars
                 announced={listing.dpe?.toUpperCase() as DpeClass | undefined}
-                verified={resolved.verifiedDpe.class as DpeClass}
-                note={`${resolved.verifiedDpe.kwhM2} kWh/m²/an · ${resolved.verifiedDpe.gesKgCO2M2} kg CO₂/m²/an`}
+                verified={resolvedOk.verifiedDpe.class as DpeClass}
+                note={`${resolvedOk.verifiedDpe.kwhM2} kWh/m²/an · ${resolvedOk.verifiedDpe.gesKgCO2M2} kg CO₂/m²/an`}
               />
             </div>
           </>
