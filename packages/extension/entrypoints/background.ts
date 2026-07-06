@@ -38,10 +38,29 @@ function hydrateTabStates(): Promise<void> {
   return hydration;
 }
 
+/**
+ * Active/désactive le sidepanel PAR ONGLET. Sans cela, un panneau ouvert suit
+ * l'utilisateur sur tous les onglets/fenêtres (nouvel onglet, lien Google
+ * Maps…) en restant vide. Ici : panneau disponible uniquement là où une
+ * annonce est détectée — Chrome le ferme automatiquement ailleurs.
+ */
+function setPanelEnabled(tabId: number, enabled: boolean): void {
+  const sp = browser.sidePanel as
+    | { setOptions?: (o: { tabId: number; path?: string; enabled: boolean }) => Promise<void> }
+    | undefined;
+  void sp?.setOptions?.({ tabId, ...(enabled ? { path: "sidepanel.html" } : {}), enabled })
+    .catch(() => {});
+}
+
 export default defineBackground(() => {
   if (browser.sidePanel && "setPanelBehavior" in browser.sidePanel) {
     browser.sidePanel
       .setPanelBehavior({ openPanelOnActionClick: true })
+      .catch(() => {});
+    // Désactivé par défaut (nouveaux onglets/fenêtres) — réactivé onglet par
+    // onglet à la détection d'une annonce.
+    (browser.sidePanel as { setOptions?: (o: { enabled: boolean }) => Promise<void> })
+      .setOptions?.({ enabled: false })
       .catch(() => {});
   }
 
@@ -51,6 +70,7 @@ export default defineBackground(() => {
       const tabId = sender.tab?.id ?? (msg as { tabId?: number }).tabId;
 
       if (msg.type === "LISTING_DETECTED" && tabId !== undefined) {
+        setPanelEnabled(tabId, true);
         await setTabState(tabId, { status: "detected", listing: msg.listing });
         sendResponse({ ok: true });
         return;
@@ -86,6 +106,7 @@ export default defineBackground(() => {
     if (change.url && tab.url) {
       const url = tab.url;
       if (!isListingPage(url) || !detectSite(url)) {
+        setPanelEnabled(tabId, false);
         await setTabState(tabId, { status: "idle" });
       }
     }
