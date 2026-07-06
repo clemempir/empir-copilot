@@ -39,6 +39,10 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>("main");
   const [tabState, setTabState] = useState<TabState>({ status: "idle" });
   const [signupContext, setSignupContext] = useState("Compte EMPIR");
+  // Annonce avec adresse corrigée à la main : remplace l'annonce détectée
+  // pour TOUT le pipeline (marché, risques, affichage) — sinon le prix médian
+  // resterait centré sur l'ancien marqueur quand la résolution échoue.
+  const [correctedListing, setCorrectedListing] = useState<Listing | null>(null);
 
   // S'attache à l'onglet actif et reste synchronisé avec le background.
   // Le sidepanel n'a pas de `sender.tab.id` côté background : on doit envoyer
@@ -112,9 +116,14 @@ export default function App() {
       return;
     }
     lastRunUrlRef.current = url;
+    setCorrectedListing(null); // nouvelle annonce → oublier la correction manuelle
     analyze.reset();
     void analyze.run(tabState.listing);
   }, [tabState.status, tabState.listing, analyze]);
+
+  // L'annonce « effective » : corrigée à la main si l'utilisateur a saisi une
+  // adresse, sinon celle détectée sur la page.
+  const activeListing = correctedListing ?? tabState.listing;
 
   // 3 essais gratuits épuisés → mur « créez un compte vérifié » (extension
   // gratuite et illimitée avec un compte ; pas de plan payant).
@@ -133,23 +142,23 @@ export default function App() {
 
   // Prix du marché du quartier (ventes DVF réelles autour de l'adresse résolue),
   // puis score prix = position de l'annonce vs médiane comparable.
-  const market = useMarket(tabState.listing, analyze.result?.resolvedAddress);
+  const market = useMarket(activeListing, analyze.result?.resolvedAddress);
   // Risques Géorisques (naturels + technologiques, avec gravité), côté client.
   // La donnée est communale : le marqueur de l'annonce (stable pour toute
   // l'analyse) suffit — évite un re-fetch quand la résolution d'adresse aboutit.
   const risksState = useRisks(
-    tabState.listing?.geo?.lat ?? analyze.result?.resolvedAddress?.lat,
-    tabState.listing?.geo?.lon ?? analyze.result?.resolvedAddress?.lon,
+    activeListing?.geo?.lat ?? analyze.result?.resolvedAddress?.lat,
+    activeListing?.geo?.lon ?? analyze.result?.resolvedAddress?.lon,
   );
   const quick: QuickAnalysis = useMemo(() => {
-    if (!tabState.listing) {
+    if (!activeListing) {
       return { listingPricePerM2: null, marketGapPct: null, market: null, score: null, scoreLabel: "—" };
     }
     if (market.loading) {
-      return { ...buildQuickAnalysis(tabState.listing, null), scoreLabel: "Calcul…" };
+      return { ...buildQuickAnalysis(activeListing, null), scoreLabel: "Calcul…" };
     }
-    return buildQuickAnalysis(tabState.listing, market.market);
-  }, [tabState.listing, market.market, market.loading]);
+    return buildQuickAnalysis(activeListing, market.market);
+  }, [activeListing, market.market, market.loading]);
 
   const usage = analyze.result?.usage ?? {
     used: 0,
@@ -165,8 +174,8 @@ export default function App() {
   // l'analyse est relancée — le compte vérifié est illimité.
   const handleAuthenticated = () => {
     setScreen("main");
-    if (analyze.result?.status === "quota_exceeded" && tabState.listing) {
-      void analyze.run(tabState.listing);
+    if (analyze.result?.status === "quota_exceeded" && activeListing) {
+      void analyze.run(activeListing);
     }
   };
 
@@ -247,23 +256,23 @@ export default function App() {
     <div className="relative flex h-screen flex-col bg-empir-bg text-empir-text">
       {mainStatus === "idle" && <IdleView />}
       {mainStatus === "analyzing" && <AnalyzingView />}
-      {mainStatus === "result" && tabState.listing && (
+      {mainStatus === "result" && activeListing && (
         <ResultView
-          listing={tabState.listing}
+          listing={activeListing}
           quick={quick}
           resolvedAddress={analyze.result?.resolvedAddress}
-          saved={saved.isSaved(tabState.listing.url)}
+          saved={saved.isSaved(activeListing.url)}
           onSaveClick={() => {
             if (!auth.user) return setScreen("signup");
-            if (!tabState.listing) return;
-            void saved.save(tabState.listing, {
+            if (!activeListing) return;
+            void saved.save(activeListing, {
               score: quick.score ?? undefined,
               address: analyze.result?.resolvedAddress?.address,
             });
           }}
           onAccountClick={() => setScreen("account")}
           onAddressSubmit={(point, userInput) => {
-            const l = tabState.listing;
+            const l = activeListing;
             if (!l) return;
             // L'adresse saisie devient la vérité : localisation écrasée +
             // marqueur précis sur le point géocodé → le résolveur cherche les
@@ -284,9 +293,9 @@ export default function App() {
       )}
 
       {/* Tiroir de diagnostic — uniquement en dev (pnpm dev). */}
-      {import.meta.env.DEV && mainStatus === "result" && tabState.listing && (
+      {import.meta.env.DEV && mainStatus === "result" && activeListing && (
         <DiagnosticPanel
-          listing={tabState.listing}
+          listing={activeListing}
           resolvedAddress={analyze.result?.resolvedAddress}
           candidates={analyze.result?.candidates}
           debug={analyze.result?.debug}
