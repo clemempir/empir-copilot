@@ -164,6 +164,15 @@ const CASES: Case[] = [
     expect: { status: "unresolved" },
   },
   {
+    name: "NÉGATIF Marsan bis (Leboncoin) — MÊME BIEN que le cas Marsan (external_ad_id 52457328) mais entrée appauvrie Leboncoin : lettres C/B sans conso ni date, marqueur district « Péré » 600 m. Vraie adresse 10 Av. du Marsan, DPE absent d'ADEME → abstention correcte (constaté en prod le 2026-07-06, l'ancien algo déployé donnait ~79 % sur une fausse adresse)",
+    input: {
+      postalCode: "40500", city: "Saint-Sever", surface: 40, rooms: 2, yearBuilt: 1975,
+      dpeClass: "C", gesClass: "B", propertyType: "Appartement",
+      geo: { lat: 43.763416, lon: -0.5744454, radiusM: 600, precision: "disk" },
+    },
+    expect: { status: "unresolved" },
+  },
+  {
     name: "NÉGATIF Castallet 26 — maison 75 m² SANS DPE, disque : vraie adresse (26 Rue du Castallet, verdict console) absente d'ADEME → abstention correcte (Bien'ici 52646091)",
     input: {
       postalCode: "40500", surface: 75, landSurface: 516, yearBuilt: 1935, propertyType: "Maison",
