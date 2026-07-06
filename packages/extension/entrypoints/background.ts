@@ -54,23 +54,27 @@ function setPanelEnabled(tabId: number, enabled: boolean): void {
 
 export default defineBackground(() => {
   if (browser.sidePanel && "setPanelBehavior" in browser.sidePanel) {
-    // Le clic sur l'icône reste géré NATIVEMENT par Chrome (fiable côté
-    // gestes utilisateur). L'anti-« panneau fantôme » se fait par onglet.
+    // Clic sur l'icône géré nativement par Chrome (fiable côté gestes).
     browser.sidePanel
       .setPanelBehavior({ openPanelOnActionClick: true })
       .catch(() => {});
-    // Rétablit le défaut global (annule un éventuel enabled:false persistant
-    // d'une version précédente).
-    (browser.sidePanel as { setOptions?: (o: { enabled: boolean; path: string }) => Promise<void> })
-      .setOptions?.({ enabled: true, path: "sidepanel.html" })
+    // Le panneau n'existe QUE sur les onglets d'annonces (activé à la
+    // détection). Un défaut global « enabled » ferait renaître le panneau
+    // dans chaque nouvelle fenêtre (comportement Chrome) — donc désactivé
+    // par défaut, partout. Conséquence assumée : l'icône n'ouvre rien sur
+    // les pages sans annonce.
+    (browser.sidePanel as { setOptions?: (o: { enabled: boolean }) => Promise<void> })
+      .setOptions?.({ enabled: false })
       .catch(() => {});
+    // Après un rechargement de l'extension, ré-active le panneau sur les
+    // onglets d'annonces déjà détectés (les options par onglet sont perdues
+    // au reload, l'état détecté survit en session storage).
+    void hydrateTabStates().then(() => {
+      for (const [tabId, st] of tabStates) {
+        if (st.status !== "idle") setPanelEnabled(tabId, true);
+      }
+    });
   }
-
-  // Tout nouvel onglet (nouvelle fenêtre, lien Google Maps…) : panneau
-  // désactivé — il ne « suit » plus. Réactivé à la détection d'une annonce.
-  browser.tabs.onCreated.addListener((tab) => {
-    if (tab.id != null) setPanelEnabled(tab.id, false);
-  });
 
   browser.runtime.onMessage.addListener((msg: EmpirRequest, sender, sendResponse) => {
     (async () => {
