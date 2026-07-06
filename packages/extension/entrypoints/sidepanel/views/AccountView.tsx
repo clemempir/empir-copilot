@@ -4,7 +4,6 @@ import {
   Bell,
   BookOpenCheck,
   ChevronRight,
-  CreditCard,
   HelpCircle,
   LogOut,
   Settings,
@@ -191,11 +190,6 @@ export function AccountView({
             icon={Bell}
             label="Alertes & notifications"
             onClick={() => onNavigate?.("alerts")}
-          />
-          <MenuItem
-            icon={CreditCard}
-            label="Abonnement & facturation"
-            onClick={() => onNavigate?.("billing")}
           />
           <MenuItem
             icon={Settings}
