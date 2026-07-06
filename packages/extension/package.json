@@ -5,6 +5,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "predev": "mkdir -p .wxt/chrome-profile",
     "dev": "wxt",
     "dev:firefox": "wxt -b firefox",
     "build": "wxt build",

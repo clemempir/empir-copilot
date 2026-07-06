@@ -5,6 +5,15 @@ import { HOST_PERMISSIONS } from "./lib/host-permissions";
 export default defineConfig({
   modules: ["@wxt-dev/module-react"],
   manifestVersion: 3,
+  // Fenêtre de test (pnpm dev) : profil Chrome PERSISTANT au lieu d'un profil
+  // jetable — Chrome y mémorise la largeur du sidepanel (non réglable par
+  // l'extension, c'est une limite de l'API), les réglages et les connexions
+  // d'une session à l'autre. Le dossier est ignoré par git (.wxt/).
+  webExt: {
+    chromiumProfile: ".wxt/chrome-profile",
+    keepProfileChanges: true,
+    startUrls: ["https://www.seloger.com/"],
+  },
   hooks: {
     "build:manifestGenerated": (wxt, manifest) => {
       if (wxt.config.browser !== "firefox") return;
