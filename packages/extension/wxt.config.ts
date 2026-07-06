@@ -10,6 +10,12 @@ export default defineConfig({
   // l'extension, c'est une limite de l'API), les réglages et les connexions
   // d'une session à l'autre. Le dossier est ignoré par git (.wxt/).
   webExt: {
+    // DÉSACTIVÉ : l'utilisateur teste dans son vrai Chrome (extension non
+    // empaquetée via Documents/EMPIR-extension-test). La fenêtre de test
+    // automatique liait la vie du serveur dev à la sienne : la fermer tuait
+    // le serveur → extension orpheline (écran blanc). Remettre disabled:false
+    // pour retrouver la fenêtre de test auto.
+    disabled: true,
     chromiumProfile: ".wxt/chrome-profile",
     keepProfileChanges: true,
     startUrls: ["https://www.seloger.com/"],
