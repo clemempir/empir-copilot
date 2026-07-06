@@ -1,7 +1,9 @@
-import { ExternalLink, Heart, MapPin, User } from "lucide-react";
-import type { Listing, QuickAnalysis } from "@empir/core";
+import { useState } from "react";
+import { ExternalLink, Heart, MapPin, PencilLine, User } from "lucide-react";
+import type { GeoPoint, Listing, QuickAnalysis } from "@empir/core";
 import type { ResolvedAddress } from "@empir/core";
 import { cn } from "@/lib/utils";
+import { AddressEditor } from "./AddressEditor";
 import {
   ComparablePriceCard,
   DataRow,
@@ -31,7 +33,16 @@ export interface ResultViewProps {
   onSaveClick: () => void;
   onAccountClick: () => void;
   saved?: boolean;
+  /**
+   * Saisie manuelle de l'adresse (relance l'analyse avec l'adresse exacte).
+   * Le lien « Je connais l'adresse » n'apparaît que si la localisation n'est
+   * pas confirmée (confiance < 75 %) — zéro pollution quand l'algo est sûr.
+   */
+  onAddressSubmit?: (point: GeoPoint, userInput: string) => void;
 }
+
+/** Sous ce seuil, la localisation n'est pas « confirmée » → saisie proposée. */
+const CONFIDENCE_CONFIRMED = 75;
 
 function splitAddress(addr: string): { line1: string; line2?: string } {
   const m = addr.match(/^(.*?)(?:\s+)(\d{5}\b.*)$/);
@@ -79,7 +90,9 @@ export function ResultView({
   onSaveClick,
   onAccountClick,
   saved,
+  onAddressSubmit,
 }: ResultViewProps) {
+  const [editingAddress, setEditingAddress] = useState(false);
   const address = resolvedAddress?.address ?? listing.location.rawAddress ?? "";
   const { line1, line2 } = splitAddress(address);
   // Surface habitable réelle issue du DPE ADEME (colonne « Réel »).
@@ -91,6 +104,10 @@ export function ResultView({
   const mapsHref = address
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
     : null;
+  // Saisie manuelle proposée seulement quand la localisation n'est pas confirmée.
+  const canEditAddress =
+    !!onAddressSubmit &&
+    (!resolvedAddress || resolvedAddress.confidence < CONFIDENCE_CONFIRMED);
 
   return (
     <div className="flex h-full flex-col">
@@ -192,52 +209,82 @@ export function ResultView({
               <div className="text-[14px] font-semibold text-empir-text">
                 {propVisual.label}
               </div>
-              <div className="mt-2 flex items-start gap-[5px]">
-                <MapPin
-                  className="mt-[1px] size-[11px] shrink-0 text-empir-muted-2"
-                  strokeWidth={1.8}
+              {editingAddress && onAddressSubmit ? (
+                <AddressEditor
+                  nearby={
+                    listing.geo ??
+                    (resolvedAddress?.lat ? { lat: resolvedAddress.lat, lon: resolvedAddress.lon } : undefined)
+                  }
+                  onCancel={() => setEditingAddress(false)}
+                  onSubmit={(point, userInput) => {
+                    setEditingAddress(false);
+                    onAddressSubmit(point, userInput);
+                  }}
                 />
-                <div className="min-w-0 flex-1 text-[10px] leading-[1.4] text-empir-muted">
-                  {line1}
-                  {line2 && (
-                    <>
-                      <br />
-                      <span className="text-empir-muted-2">{line2}</span>
-                    </>
-                  )}
-                </div>
-                {mapsHref && (
-                  <a
-                    href={mapsHref}
-                    target="_blank"
-                    rel="noreferrer"
-                    title="Ouvrir dans Google Maps"
-                    className="grid size-[22px] shrink-0 place-items-center rounded-[6px] transition-all hover:bg-white/10"
-                    style={{ background: "rgba(255,255,255,0.05)" }}
-                  >
-                    <ExternalLink
-                      className="size-3 text-empir-muted"
+              ) : (
+                <>
+                  <div className="mt-2 flex items-start gap-[5px]">
+                    <MapPin
+                      className="mt-[1px] size-[11px] shrink-0 text-empir-muted-2"
                       strokeWidth={1.8}
                     />
-                  </a>
-                )}
-              </div>
-              {resolvedAddress && (
-                <div className="mt-[9px] flex flex-wrap items-center gap-[6px]">
-                  <span
-                    className="rounded-empir-pill px-[7px] py-[2px] text-[10px] font-bold"
-                    style={
-                      resolvedAddress.confidence < 60
-                        ? { background: "rgba(239,68,68,0.14)", color: "#f87171" }
-                        : { background: "rgba(34,197,94,0.14)", color: "#4ade80" }
-                    }
-                  >
-                    {Math.round(resolvedAddress.confidence)}%
-                  </span>
-                  <span className="text-[8.5px] tracking-[0.02em] text-empir-muted-2">
-                    fiabilité localisation
-                  </span>
-                </div>
+                    <div className="min-w-0 flex-1 text-[10px] leading-[1.4] text-empir-muted">
+                      {line1}
+                      {line2 && (
+                        <>
+                          <br />
+                          <span className="text-empir-muted-2">{line2}</span>
+                        </>
+                      )}
+                    </div>
+                    {mapsHref && (
+                      <a
+                        href={mapsHref}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="Ouvrir dans Google Maps"
+                        className="grid size-[22px] shrink-0 place-items-center rounded-[6px] transition-all hover:bg-white/10"
+                        style={{ background: "rgba(255,255,255,0.05)" }}
+                      >
+                        <ExternalLink
+                          className="size-3 text-empir-muted"
+                          strokeWidth={1.8}
+                        />
+                      </a>
+                    )}
+                  </div>
+                  {(resolvedAddress || canEditAddress) && (
+                    <div className="mt-[9px] flex flex-wrap items-center gap-[6px]">
+                      {resolvedAddress && (
+                        <>
+                          <span
+                            className="rounded-empir-pill px-[7px] py-[2px] text-[10px] font-bold"
+                            style={
+                              resolvedAddress.confidence < 60
+                                ? { background: "rgba(239,68,68,0.14)", color: "#f87171" }
+                                : { background: "rgba(34,197,94,0.14)", color: "#4ade80" }
+                            }
+                          >
+                            {Math.round(resolvedAddress.confidence)}%
+                          </span>
+                          <span className="text-[8.5px] tracking-[0.02em] text-empir-muted-2">
+                            fiabilité localisation
+                          </span>
+                        </>
+                      )}
+                      {canEditAddress && (
+                        <button
+                          type="button"
+                          onClick={() => setEditingAddress(true)}
+                          className="flex items-center gap-[3px] text-[8.5px] tracking-[0.02em] text-empir-muted transition-colors hover:text-empir-text"
+                        >
+                          <PencilLine className="size-[9px]" strokeWidth={1.8} />
+                          Je connais l'adresse
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
             </div>
             <div className="flex shrink-0 flex-col items-center gap-1">

@@ -16,8 +16,9 @@ export const LISTING_MATCHES = [
  */
 export const HOST_PERMISSIONS = [
   ...LISTING_MATCHES,
-  // BAN / Géoplateforme — geocoding
+  // BAN / Géoplateforme — geocoding (autocomplétion de l'adresse manuelle incluse)
   "https://api-adresse.data.gouv.fr/*",
+  "https://data.geopf.fr/*",
   // DVF — ventes immobilières (files.data.gouv.fr redirige 302 vers le bucket OVH)
   "https://files.data.gouv.fr/*",
   "https://geo-dvf.s3.sbg.io.cloud.ovh.net/*",

@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { browser } from "wxt/browser";
-import { buildQuickAnalysis, explainPluZone, type Listing, type QuickAnalysis } from "@empir/core";
+import {
+  buildQuickAnalysis,
+  correctedLocation,
+  explainPluZone,
+  type Listing,
+  type QuickAnalysis,
+} from "@empir/core";
 import type { TabState } from "@/lib/messages";
 import { useAuth } from "@/lib/hooks/use-auth";
 import { useAnalyze } from "@/lib/hooks/use-analyze";
@@ -245,6 +251,19 @@ export default function App() {
             });
           }}
           onAccountClick={() => setScreen("account")}
+          onAddressSubmit={(point, userInput) => {
+            const l = tabState.listing;
+            if (!l) return;
+            // L'adresse saisie devient la vérité : localisation écrasée +
+            // marqueur précis sur le point géocodé → le résolveur cherche les
+            // DPE de CETTE adresse (gate serré ~30 m). Relance une analyse.
+            const corrected: Listing = {
+              ...l,
+              location: correctedLocation(userInput, point),
+              geo: { lat: point.lat, lon: point.lon, precise: true },
+            };
+            void analyze.run(corrected);
+          }}
           hasUnread={notifs.items.some((n) => !n.read)}
           risks={risksState.risks}
           urbanisme={analyze.result?.enrichments?.plu ? mapUrbanisme(analyze.result.enrichments.plu) : []}
