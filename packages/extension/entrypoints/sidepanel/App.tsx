@@ -17,6 +17,8 @@ import { useRisks } from "@/lib/hooks/use-risks";
 import { useSavedListings } from "@/lib/hooks/use-saved-listings";
 import { useNotifications } from "@/lib/hooks/use-notifications";
 import { useProfile } from "@/lib/hooks/use-profile";
+import { X } from "lucide-react";
+import { NotificationCard } from "@/components/empir";
 import { IdleView } from "./views/IdleView";
 import { AnalyzingView } from "./views/AnalyzingView";
 import { ResultView } from "./views/ResultView";
@@ -162,6 +164,22 @@ export default function App() {
     return buildQuickAnalysis(activeListing, market.market);
   }, [activeListing, market.market, market.loading]);
 
+  // Encart de notification : la dernière non-lue apparaît au-dessus de la
+  // carte adresse, 2 s APRÈS l'affichage du résultat (l'utilisateur regarde
+  // déjà l'écran → l'animation d'entrée capte son attention). « Plus tard »
+  // (X) la masque pour CETTE analyse seulement — elle revient à la suivante,
+  // jusqu'au « marquer comme lu ».
+  const [notifToastClosed, setNotifToastClosed] = useState(false);
+  const [notifToastReady, setNotifToastReady] = useState(false);
+  useEffect(() => {
+    setNotifToastClosed(false);
+    setNotifToastReady(false);
+    if (analyze.result?.status !== "ok") return;
+    const t = setTimeout(() => setNotifToastReady(true), 1000);
+    return () => clearTimeout(t);
+  }, [analyze.result]);
+  const latestUnread = notifs.items.find((n) => !n.read);
+
   const usage = analyze.result?.usage ?? {
     used: 0,
     limit: auth.user ? null : FREE_TRIALS,
@@ -299,6 +317,39 @@ export default function App() {
         <ResultView
           listing={activeListing}
           quick={quick}
+          notice={
+            latestUnread && !notifToastClosed && notifToastReady ? (
+              <div key={latestUnread.id} className="empir-notice-in relative">
+                {/* Contour dégradé discret (violet → violet pâle) : enveloppe
+                    de 1px peinte en dégradé, carte opaque sans bordure dessus. */}
+                <div
+                  className="rounded-empir-card p-px"
+                  style={{
+                    background:
+                      "linear-gradient(135deg, rgba(124,108,255,0.65), rgba(124,108,255,0.12) 50%, rgba(183,172,255,0.4))",
+                    boxShadow: "0 0 16px rgba(124,108,255,0.10)",
+                  }}
+                >
+                  <NotificationCard
+                    title={latestUnread.title}
+                    body={latestUnread.body ?? undefined}
+                    time={timeAgo(latestUnread.created_at)}
+                    onClick={() => void notifs.markRead(latestUnread.id)}
+                    className="border-0 bg-[#10151f]"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setNotifToastClosed(true)}
+                  title="Plus tard"
+                  className="absolute -right-1.5 -top-1.5 grid size-5 place-items-center rounded-full border border-empir-line text-empir-muted transition-colors hover:text-empir-text"
+                  style={{ background: "#0d121d" }}
+                >
+                  <X className="size-3" strokeWidth={2} />
+                </button>
+              </div>
+            ) : undefined
+          }
           resolvedAddress={analyze.result?.resolvedAddress}
           saved={saved.isSaved(activeListing.url)}
           onSaveClick={() => {

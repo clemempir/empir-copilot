@@ -121,3 +121,14 @@
     background: var(--color-empir-bg);
   }
 }
+
+/* Entrée de l'encart notification : glissement gauche → droite avec léger
+   rebond (overshoot) + fondu — assez vif pour attirer l'œil, sans agresser. */
+@keyframes empir-notice-in {
+  0%   { opacity: 0; transform: translateX(-36px); }
+  70%  { opacity: 1; transform: translateX(3px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+.empir-notice-in {
+  animation: empir-notice-in 1.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}

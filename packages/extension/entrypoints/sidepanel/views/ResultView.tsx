@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Check, ChevronDown, ExternalLink, Heart, MapPin, PencilLine, User } from "lucide-react";
 import { stripAccentsLower } from "@empir/core";
 import type { GeoPoint, Listing, QuickAnalysis } from "@empir/core";
@@ -21,6 +21,8 @@ import {
 export interface ResultViewProps {
   listing: Listing;
   quick: QuickAnalysis;
+  /** Encart affiché au-dessus de la carte adresse (ex. dernière notification). */
+  notice?: ReactNode;
   resolvedAddress?: ResolvedAddress;
   /** Tous les rapprochements d'adresse trouvés par l'algo (liste déroulante). */
   candidates?: ResolvedAddress[];
@@ -96,6 +98,7 @@ function propertyKind(listing: Listing): PropertyKind {
 export function ResultView({
   listing,
   quick,
+  notice,
   resolvedAddress,
   candidates = [],
   onCandidateValidate,
@@ -212,6 +215,9 @@ export function ResultView({
       </header>
 
       <div className="empir-scroll relative flex-1 overflow-y-auto px-[18px] pb-7">
+        {/* Encart notification (au-dessus de la carte adresse) */}
+        {notice && <div className="mt-[14px]">{notice}</div>}
+
         {/* ─── HERO ─── */}
         <section
           className="mt-[14px] rounded-[14px] border p-4"
