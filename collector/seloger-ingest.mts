@@ -12,32 +12,8 @@
 // Usage : SUPABASE_URL=… SUPABASE_SERVICE_KEY=… pnpm ingest-seloger
 // ============================================================================
 import { parseSelogerHtml, type Listing } from "../packages/core/src/index";
-
-const SUPABASE_URL = env("SUPABASE_URL");
-const SERVICE_KEY = env("SUPABASE_SERVICE_KEY");
-
-function env(k: string): string {
-  const v = process.env[k];
-  if (!v) {
-    console.error(`✗ variable d'env manquante: ${k}`);
-    process.exit(1);
-  }
-  return v;
-}
-
-async function sb(path: string, opts: RequestInit = {}): Promise<Response> {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    ...opts,
-    headers: {
-      apikey: SERVICE_KEY,
-      authorization: `Bearer ${SERVICE_KEY}`,
-      "content-type": "application/json",
-      ...(opts.headers ?? {}),
-    },
-  });
-  if (!r.ok) throw new Error(`Supabase ${r.status}: ${await r.text()}`);
-  return r;
-}
+// @ts-expect-error module JS partagé sans déclarations de types
+import { sb } from "./_shared.mjs";
 
 /** Listing (parseur core) → dossier de cas (même schéma extracted que Bien'ici). */
 function toCase(l: Listing, url: string) {

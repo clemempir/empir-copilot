@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { fetchRisks, type RiskItem } from "@empir/core";
+import type { RiskItem } from "@empir/core";
 import type { RiskLevel } from "@/components/empir/risk-row";
-import { cachedCitycode } from "@/lib/enrichment-cache";
+import { cachedCitycode, cachedRisks } from "@/lib/enrichment-cache";
 
 export type { RiskLevel };
 
@@ -60,7 +60,7 @@ export function useRisks(lat: number | undefined, lon: number | undefined): UseR
           if (!cancelled) setRisks([]);
           return;
         }
-        const report = await fetchRisks(citycode);
+        const report = await cachedRisks(citycode);
         const rows = [...report.naturels.map(toRow), ...report.technologiques.map(toRow)];
         if (!cancelled) setRisks(rows);
       } catch {

@@ -8,34 +8,22 @@
 //
 // (mêmes variables d'environnement que le collecteur)
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+import { env, sb } from "../collector/_shared.mjs";
+
+env("SUPABASE_URL");
+env("SUPABASE_SERVICE_KEY");
 const [title, body] = process.argv.slice(2);
 
-if (!SUPABASE_URL || !SERVICE_KEY) {
-  console.error("Variables manquantes : SUPABASE_URL et SUPABASE_SERVICE_KEY.");
-  process.exit(1);
-}
 if (!title) {
   console.error('Usage : pnpm broadcast "Titre" "Message (optionnel)"');
   process.exit(1);
 }
 
-const headers = {
-  apikey: SERVICE_KEY,
-  Authorization: `Bearer ${SERVICE_KEY}`,
-  "content-type": "application/json",
-};
-
 async function listAllUserIds() {
   const ids = [];
   const pageSize = 1000;
   for (let offset = 0; ; offset += pageSize) {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/users_profile?select=id&offset=${offset}&limit=${pageSize}`,
-      { headers },
-    );
-    if (!res.ok) throw new Error(`users_profile: HTTP ${res.status} ${await res.text()}`);
+    const res = await sb(`users_profile?select=id&offset=${offset}&limit=${pageSize}`);
     const rows = await res.json();
     ids.push(...rows.map((r) => r.id));
     if (rows.length < pageSize) return ids;
@@ -43,12 +31,11 @@ async function listAllUserIds() {
 }
 
 async function insertBatch(rows) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/notifications`, {
+  await sb("notifications", {
     method: "POST",
-    headers: { ...headers, Prefer: "return=minimal" },
+    headers: { Prefer: "return=minimal" },
     body: JSON.stringify(rows),
   });
-  if (!res.ok) throw new Error(`notifications: HTTP ${res.status} ${await res.text()}`);
 }
 
 const userIds = await listAllUserIds();

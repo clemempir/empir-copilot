@@ -16,3 +16,11 @@ export function handleCorsPreflight(req: Request): Response | null {
   }
   return null;
 }
+
+/** Réponse JSON avec les en-têtes CORS — utilisée par toutes les fonctions. */
+export function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "content-type": "application/json" },
+  });
+}

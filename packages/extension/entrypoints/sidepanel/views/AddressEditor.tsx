@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { CornerDownLeft, X } from "lucide-react";
-import type { GeoPoint } from "@empir/core";
+import { geocodeSuggest, type GeoPoint } from "@empir/core";
 
 /**
  * Saisie manuelle de l'adresse (option « Je connais l'adresse ») : champ
@@ -13,40 +13,8 @@ import type { GeoPoint } from "@empir/core";
 export interface AddressEditorProps {
   /** Biais de proximité pour l'autocomplétion (marqueur de l'annonce). */
   nearby?: { lat: number; lon: number };
-  onSubmit: (point: GeoPoint, userInput: string) => void;
+  onSubmit: (point: GeoPoint) => void;
   onCancel: () => void;
-}
-
-async function fetchSuggestions(
-  q: string,
-  nearby: AddressEditorProps["nearby"],
-  signal: AbortSignal,
-): Promise<GeoPoint[]> {
-  const bias = nearby ? `&lat=${nearby.lat}&lon=${nearby.lon}` : "";
-  const url = `https://data.geopf.fr/geocodage/search?q=${encodeURIComponent(q)}&limit=5&autocomplete=1${bias}`;
-  const res = await fetch(url, { signal });
-  if (!res.ok) return [];
-  const json = (await res.json()) as {
-    features?: Array<{
-      geometry?: { coordinates?: [number, number] };
-      properties?: { label?: string; score?: number; citycode?: string; type?: GeoPoint["precision"] };
-    }>;
-  };
-  const out: GeoPoint[] = [];
-  for (const f of json.features ?? []) {
-    const coords = f.geometry?.coordinates;
-    const p = f.properties;
-    if (!coords || !p?.label || !p.citycode || !p.type) continue;
-    out.push({
-      lon: coords[0],
-      lat: coords[1],
-      label: p.label,
-      score: p.score ?? 0,
-      citycode: p.citycode,
-      precision: p.type,
-    });
-  }
-  return out;
 }
 
 export function AddressEditor({ nearby, onSubmit, onCancel }: AddressEditorProps) {
@@ -65,7 +33,7 @@ export function AddressEditor({ nearby, onSubmit, onCancel }: AddressEditorProps
     }
     const ctrl = new AbortController();
     const t = setTimeout(() => {
-      fetchSuggestions(q, nearby, ctrl.signal)
+      geocodeSuggest(q, { nearby, signal: ctrl.signal })
         .then(setSuggestions)
         .catch(() => {
           /* frappe suivante ou réseau — silencieux */
@@ -77,7 +45,7 @@ export function AddressEditor({ nearby, onSubmit, onCancel }: AddressEditorProps
     };
   }, [value, nearby]);
 
-  const pick = (s: GeoPoint) => onSubmit(s, value.trim() || s.label);
+  const pick = (s: GeoPoint) => onSubmit(s);
 
   return (
     <div className="mt-2">

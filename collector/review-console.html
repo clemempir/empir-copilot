@@ -167,74 +167,6 @@ function adaptCase(row){
   };
 }
 
-const SAMPLE_CASES = [
-  {
-    id:"sl-261498325", portal:"SeLoger", listingUrl:"https://www.seloger.com/annonces/achat/maison/saint-sever-40/261498325.htm",
-    agency:"Orpi Saint-Sever Arceaux", ref:"4317",
-    extracted:{propertyType:"maison",surface:50,rooms:3,dpeClass:"G",dpeKwh:null,gesClass:"C",gesVal:null,dpeDate:null,year:null,city:"Saint-Sever",postalCode:"40500",marker:{lat:43.753235,lon:-0.570683,precise:true}},
-    resolved:{address:"32 Rue du Castallet, 40500 Saint-Sever",lat:43.753267,lon:-0.570677,confidence:96,status:"confirmed",ademeCertId:"2340E3064983P",parcelId:null},
-    candidates:[{address:"32 Rue du Castallet, 40500 Saint-Sever",confidence:96,numero_dpe:"2340E3064983P",dist_m:4}],
-    scoreBreakdown:[{c:"Position (marqueur)",matched:true,expected:"43.7532,-0.5707",actual:"à 4 m"},{c:"Surface",matched:true,expected:"50 m²",actual:"49,5 m²"},{c:"DPE",matched:true,expected:"G",actual:"G"},{c:"GES",matched:true,expected:"C",actual:"C"},{c:"Chauffage",matched:true,expected:"électrique",actual:"Électricité"}],
-    pseudoLabel:{agree:true,method:"marqueur+attributs"}, photos:[]
-  },
-  {
-    id:"bi-TACHON23-66193", portal:"Bien'ici", listingUrl:"https://www.bienici.com/annonce/vente/saint-sever/batiment-immeuble/hektor-TACHON23-66193",
-    agency:"SN Agence Tachon", ref:"V20066193",
-    extracted:{propertyType:"immeuble",surface:284,rooms:null,dpeClass:"E",dpeKwh:285,gesClass:"C",gesVal:11,dpeDate:"2023-10-25",year:null,city:"Saint-Sever",postalCode:"40500",marker:{lat:43.760654,lon:-0.568646,precise:false,radiusM:1000}},
-    resolved:{address:"12 Rue de Pontix, 40500 Saint-Sever",lat:43.758307,lon:-0.575502,confidence:93,status:"confirmed",ademeCertId:"2640E1528408R",parcelId:null},
-    candidates:[{address:"12 Rue de Pontix, 40500 Saint-Sever",confidence:93,numero_dpe:"2640E1528408R",dist_m:606}],
-    scoreBreakdown:[{c:"Date diag.",matched:true,expected:"2023-10-25",actual:"un lot daté 25/10/2023"},{c:"Conso",matched:true,expected:"285",actual:"285,7"},{c:"Surface immeuble",matched:true,expected:"284 m²",actual:"284 m²"},{c:"Nb logements",matched:true,expected:"5",actual:"5"},{c:"Disque flou",matched:true,expected:"<1000 m",actual:"606 m"}],
-    pseudoLabel:{agree:true,method:"date+conso+immeuble"}, photos:[]
-  },
-  {
-    id:"lbc-3076439865", portal:"Leboncoin", listingUrl:"https://www.leboncoin.fr/ad/ventes_immobilieres/3076439865",
-    agency:"HUMAN Immobilier", ref:"572-306B",
-    extracted:{propertyType:"immeuble",surface:555,rooms:null,dpeClass:"G",dpeKwh:null,gesClass:null,gesVal:null,dpeDate:"2023-12-19",year:1758,city:"Saint-Sever",postalCode:"40500",marker:null},
-    resolved:{address:"24 Rue des Ursulines, 40500 Saint-Sever",lat:43.759451,lon:-0.572381,confidence:78,status:"confirmed",ademeCertId:"2340E4409891V",parcelId:null},
-    candidates:[{address:"24 Rue des Ursulines, 40500 Saint-Sever",confidence:78,numero_dpe:"2340E4409891V",dist_m:null}],
-    scoreBreakdown:[{c:"Date diag.",matched:true,expected:"2023-12-19",actual:"unique à St-Sever"},{c:"Ancienneté",matched:true,expected:"1758",actual:"1758"},{c:"DPE",matched:true,expected:"G",actual:"un lot G"},{c:"Surface",matched:false,expected:"555 m² (immeuble)",actual:"lot 89 m²"}],
-    pseudoLabel:{agree:true,method:"date unique"}, photos:[]
-  },
-  {
-    id:"bi-iad-2030094", portal:"Bien'ici", listingUrl:"https://www.bienici.com/annonce/vente/saint-sever/maison/3pieces/iad-france-2030094",
-    agency:"IAD France", ref:"1966901",
-    extracted:{propertyType:"maison",surface:65,rooms:3,dpeClass:"C",dpeKwh:129,gesClass:"A",gesVal:5,dpeDate:"2024-02-14",year:1908,city:"Saint-Sever",postalCode:"40500",marker:{lat:43.771964,lon:-0.569646,precise:false,radiusM:125}},
-    resolved:{address:"4 Avenue de l'Armagnac, 40500 Saint-Sever",lat:43.771113,lon:-0.569629,confidence:91,status:"confirmed",ademeCertId:"2440E0534882B",parcelId:null},
-    candidates:[{address:"4 Avenue de l'Armagnac, 40500 Saint-Sever",confidence:91,numero_dpe:"2440E0534882B",dist_m:95}],
-    scoreBreakdown:[{c:"Date diag.",matched:true,expected:"2024-02-14",actual:"unique"},{c:"Conso",matched:true,expected:"129",actual:"129,5"},{c:"GES",matched:true,expected:"5",actual:"5"},{c:"Disque flou",matched:true,expected:"<125 m",actual:"95 m"}],
-    pseudoLabel:{agree:true,method:"date+conso+flou"}, photos:[]
-  },
-  {
-    id:"bi-laforet-52748350", portal:"Bien'ici", listingUrl:"https://www.bienici.com/annonce/vente/saint-sever/appartement/3pieces/laforet-immo-facile-52748350",
-    agency:"Laforêt Saint-Sever", ref:"16410",
-    extracted:{propertyType:"appartement",surface:46,rooms:3,dpeClass:"C",dpeKwh:127,gesClass:"A",gesVal:4,dpeDate:"2026-05-12",year:null,city:"Saint-Sever",postalCode:"40500",marker:{lat:43.769003,lon:-0.571601,precise:false,radiusM:125}},
-    resolved:{address:"10 Rue de Papin, 40500 Saint-Sever",lat:43.768543,lon:-0.57033,confidence:90,status:"confirmed",ademeCertId:"2640E1307914D",parcelId:null},
-    candidates:[{address:"10 Rue de Papin, 40500 Saint-Sever",confidence:90,numero_dpe:"2640E1307914D",dist_m:114}],
-    scoreBreakdown:[{c:"Date visite",matched:true,expected:"2026-05-12",actual:"date_visite (fallback)"},{c:"Conso",matched:true,expected:"127",actual:"127"},{c:"Surface",matched:true,expected:"46 m²",actual:"46 m²"},{c:"Disque flou",matched:true,expected:"<125 m",actual:"114 m"}],
-    pseudoLabel:{agree:true,method:"date_visite+conso"}, photos:[]
-  },
-  {
-    id:"sl-256068147", portal:"SeLoger", listingUrl:"https://www.seloger.com/256068147/detail.htm",
-    agency:"HUMAN Immobilier", ref:"572-121",
-    extracted:{propertyType:"immeuble",surface:234,rooms:null,dpeClass:"D",dpeKwh:226,gesClass:"C",gesVal:18,dpeDate:"2024-05-28",year:null,city:"Saint-Sever",postalCode:"40500",marker:null},
-    resolved:{address:"7 Rue Saint-Jean, 40500 Saint-Sever",lat:43.758593,lon:-0.573704,confidence:54,status:"probable",ademeCertId:"2440E1865923Y",parcelId:null},
-    candidates:[{address:"7 Rue Saint-Jean, 40500 Saint-Sever",confidence:54,numero_dpe:"2440E1865923Y",dist_m:null},{address:"2 Rue du Tribunal, 40500 Saint-Sever",confidence:38,numero_dpe:"2340E3363586I",dist_m:null}],
-    scoreBreakdown:[{c:"Date diag.",matched:true,expected:"2024-05-28",actual:"match → maison 357 m²"},{c:"Type",matched:false,expected:"immeuble",actual:"maison"},{c:"Surface",matched:false,expected:"234 m²",actual:"357 m²"},{c:"DPE",matched:false,expected:"D/226",actual:"E/285"}],
-    pseudoLabel:{agree:false,method:"date seule (incohérence type/surface)"}, photos:[],
-    note_seed:"Cas piège : vraie adresse = 2 Rue du Tribunal. La date 28/05/2024 mène par erreur au 7 Rue Saint-Jean. DPE annoncé (226/18) absent de la base (re-diagnostic non publié)."
-  },
-  {
-    id:"bi-immofacile-59810271", portal:"Bien'ici", listingUrl:"https://www.bienici.com/annonce/vente/saint-sever/maison/6pieces/immo-facile-59810271",
-    agency:"Côté Patio Immobilier", ref:"MHD606",
-    extracted:{propertyType:"maison",surface:228,rooms:6,dpeClass:null,dpeKwh:null,gesClass:null,gesVal:null,dpeDate:null,year:1955,city:"Saint-Sever",postalCode:"40500",marker:{lat:43.760682,lon:-0.572581,precise:false,radiusM:125}},
-    resolved:{address:null,lat:null,lon:null,confidence:0,status:"unresolved",ademeCertId:null,parcelId:null},
-    candidates:[],
-    scoreBreakdown:[{c:"DPE",matched:false,expected:"—",actual:"aucun DPE annoncé"},{c:"Candidats ADEME",matched:false,expected:"≥1",actual:"0 dans le rayon"}],
-    pseudoLabel:{agree:null,method:"bien sans DPE — abstention attendue"}, photos:[],
-    note_seed:"Bien sans DPE dans la base → 'non résolu' est la BONNE réponse (abstention correcte)."
-  }
-];
-
 /* ---------- état ---------- */
 let CASES = [];
 let labels = loadLabels();
@@ -246,15 +178,20 @@ const enc = encodeURIComponent;
 function loadLabels(){ try{return JSON.parse(localStorage.getItem("empir_labels")||"{}")}catch(e){return {}} }
 function persistLabels(){ localStorage.setItem("empir_labels", JSON.stringify(labels)); }
 
-/* Charge les cas + les verdicts déjà posés depuis Supabase. */
+/* Charge les cas + les verdicts déjà posés depuis Supabase (en parallèle).
+   `select=` explicite : sans lui PostgREST renvoie aussi `snapshot` (l'annonce
+   brute, jamais lue ici) → plusieurs Mo inutiles à chaque ouverture. */
+const CASE_COLS = "id,portal,listing_url,agency,ref,extracted,resolved,candidates,score_breakdown,status,pseudo_label,photos";
 async function loadCases(){
   try{
-    const r = await fetch(SB_URL+"/rest/v1/cases?status=in.(confirmed,probable,unresolved)&order=collected_at.desc&limit=500", { headers: SB_HEADERS });
+    const [r, lr] = await Promise.all([
+      fetch(SB_URL+"/rest/v1/cases?status=in.(confirmed,probable,unresolved)&select="+CASE_COLS+"&order=collected_at.desc&limit=500", { headers: SB_HEADERS }),
+      fetch(SB_URL+"/rest/v1/labels?select=case_id,verdict,corrected_address,note,reviewed_at", { headers: SB_HEADERS }),
+    ]);
     if(!r.ok) throw new Error("HTTP "+r.status);
     const rows = await r.json();
-    CASES = rows.length ? rows.map(adaptCase) : SAMPLE_CASES;
+    CASES = rows.map(adaptCase);
     // Verdicts déjà en base → fusionnés avec le localStorage.
-    const lr = await fetch(SB_URL+"/rest/v1/labels?select=case_id,verdict,corrected_address,note,reviewed_at", { headers: SB_HEADERS });
     if(lr.ok){
       for(const l of await lr.json()){
         labels[l.case_id] = { verdict:l.verdict, correctedAddress:l.corrected_address, note:l.note, reviewedAt:l.reviewed_at };
@@ -262,8 +199,8 @@ async function loadCases(){
       persistLabels();
     }
   }catch(e){
-    console.warn("Supabase injoignable, échantillon local :", e);
-    CASES = SAMPLE_CASES;
+    console.warn("Supabase injoignable :", e);
+    CASES = [];
   }
   render(); updateStats();
 }
@@ -298,6 +235,13 @@ function passesFilter(c){
 }
 function render(){
   const list = $("#qlist"); list.innerHTML="";
+  if(!CASES.length){
+    const empty=document.createElement("div");
+    empty.className="qmeta";
+    empty.style.padding="14px";
+    empty.textContent="Aucun cas — base vide ou injoignable. Lance `pnpm collect` puis recharge.";
+    list.appendChild(empty);
+  }
   CASES.filter(passesFilter).forEach(c=>{
     const el=document.createElement("div");
     el.className="qitem"+(c.id===curId?" sel":"");

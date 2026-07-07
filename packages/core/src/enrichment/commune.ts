@@ -25,6 +25,29 @@ export async function citycodeFromLatLon(
 }
 
 /**
+ * Code postal principal d'une commune nommée, cherchée dans le même
+ * département qu'un code postal de référence (départage les homonymes).
+ * Retourne `null` si introuvable ou en cas d'erreur réseau (best-effort).
+ */
+export async function postalCodeOfCity(
+  city: string,
+  referencePostalCode: string,
+  opts: FetchCommuneInfoOptions = {},
+): Promise<string | null> {
+  const fetchFn = opts.fetchFn ?? fetch;
+  try {
+    const dept = referencePostalCode.slice(0, 2);
+    const url = `${API_BASE}?nom=${encodeURIComponent(city)}&codeDepartement=${dept}&fields=nom,codesPostaux&boost=population&limit=1`;
+    const res = await fetchFn(url);
+    if (!res.ok) return null;
+    const rows = (await res.json()) as { nom?: string; codesPostaux?: string[] }[];
+    return rows[0]?.codesPostaux?.[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Population et densité de la commune via geo.api.gouv.fr (sans clé).
  * `surface` est renvoyée en HECTARES → densité hab/km² = population / (surface / 100).
  * Erreur réseau ou réponse invalide → throw (le pipeline gère via allSettled).

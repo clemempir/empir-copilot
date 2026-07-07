@@ -21,7 +21,6 @@ export interface AnalysisResult {
   resolvedAddress?: ResolvedAddress;
   candidates?: ResolvedAddress[];
   enrichments?: {
-    risks?: unknown;
     plu?: unknown;
     taxeFonciere?: unknown;
   };

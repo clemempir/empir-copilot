@@ -14,7 +14,7 @@
  * Note : ce endpoint enregistre l'usage UNIQUEMENT si `allowed=true`. Il est
  * appelé en amont de `resolve-address`/`analyze`.
  */
-import { handleCorsPreflight, corsHeaders } from "../_shared/cors.ts";
+import { handleCorsPreflight, corsHeaders, jsonResponse } from "../_shared/cors.ts";
 import { serviceClient, getAuthedUser, getClientIp, sha256Short } from "../_shared/supabase.ts";
 
 /** Essais gratuits sans compte — à vie par appareil, pas de fenêtre glissante. */
@@ -53,9 +53,14 @@ Deno.serve(async (req: Request) => {
   const ipHash = ip ? await sha256Short(`${ip}:${ipSalt}`) : null;
 
   // Compte vérifié (e-mail confirmé / Google) → illimité. On log quand même
-  // l'usage pour les statistiques produit.
+  // l'usage pour les statistiques produit, sans bloquer la réponse : ce log
+  // ne gate aucun quota, il peut finir après l'envoi.
   if (user?.emailConfirmed) {
-    if (body.commit !== false) await logUsage(supa, user.id, body, ipHash);
+    if (body.commit !== false) {
+      const pending = logUsage(supa, user.id, body, ipHash).catch(() => {});
+      (globalThis as { EdgeRuntime?: { waitUntil(p: Promise<unknown>): void } })
+        .EdgeRuntime?.waitUntil?.(pending);
+    }
     return jsonResponse({ used: 0, limit: null, allowed: true, plan: "verified" });
   }
 
@@ -93,12 +98,5 @@ async function logUsage(
     listing_url: body.listingUrl,
     resolved_address: body.resolvedAddress ?? null,
     confidence: body.confidence ?? null,
-  });
-}
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "content-type": "application/json" },
   });
 }

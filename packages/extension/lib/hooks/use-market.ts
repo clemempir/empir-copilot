@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   buildSaleTimeline,
   computeMarketStats,
@@ -42,16 +42,13 @@ export function useMarket(
   // Le state d'onglet est un objet NEUF à chaque broadcast du background : ne
   // dépendre que des primitives réellement utilisées, sinon l'effet re-télécharge
   // les CSV DVF (plusieurs Mo) à chaque re-synchronisation sans changement réel.
-  const listingRef = useRef(listing);
-  listingRef.current = listing;
   const url = listing?.url;
   const price = listing?.price;
   const surface = listing?.surface;
 
   useEffect(() => {
-    const cur = listingRef.current;
     // DVF ne couvre que maisons/appartements (pas les immeubles), et il faut un point.
-    if (!cur || (type !== "Appartement" && type !== "Maison") || !lat || !lon) {
+    if (price == null || (type !== "Appartement" && type !== "Maison") || !lat || !lon) {
       setMarket(null);
       setTimeline(null);
       setLoading(false);
@@ -73,7 +70,7 @@ export function useMarket(
         const stats = computeMarketStats(sales, { lat, lon }, type, { surface });
         // Historique du bien : ventes passées à cette adresse + prix affiché aujourd'hui.
         const history = propertySaleHistory(sales, { address, lat, lon, surface });
-        const tl = buildSaleTimeline(history, cur.price);
+        const tl = buildSaleTimeline(history, price);
         if (!cancelled) {
           setMarket(stats);
           setTimeline(tl);

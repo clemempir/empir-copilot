@@ -15,9 +15,11 @@
 // Node >= 18 (fetch natif).  Aucune dépendance npm.
 // ============================================================================
 
+import { env, sleep, sb, toResolverInput, toCandidateRow } from "./_shared.mjs";
+
 // ---------- Config via variables d'environnement ----------
-const SUPABASE_URL      = env("SUPABASE_URL");          // https://xxxx.supabase.co
-const SERVICE_KEY       = env("SUPABASE_SERVICE_KEY");  // service_role (écriture, server-side only)
+env("SUPABASE_URL");          // https://xxxx.supabase.co (utilisé par sb)
+env("SUPABASE_SERVICE_KEY");  // service_role (écriture, server-side only)
 const RESOLVE_ENDPOINT  = process.env.RESOLVE_ENDPOINT || ""; // ta edge function (optionnel)
 const RESOLVE_AUTH      = process.env.RESOLVE_AUTH || "";     // header Authorization éventuel
 const ALGO_VERSION      = process.env.ALGO_VERSION || "unknown";
@@ -37,9 +39,7 @@ const COMMUNES = [
 const TYPE_MAP = { house: "maison", flat: "appartement", building: "immeuble" };
 
 // ---------- Helpers ----------
-function env(k){ const v = process.env[k]; if(!v){ console.error(`✗ variable d'env manquante: ${k}`); process.exit(1);} return v; }
 function int(v, d){ const n = parseInt(v,10); return Number.isFinite(n)? n : d; }
-const sleep = ms => new Promise(r=>setTimeout(r, ms));
 const jitter = () => DELAY_MS + Math.floor(Math.random()*600);
 
 async function biFetch(url){
@@ -64,32 +64,22 @@ function searchUrl(zoneId, from){
   return "https://www.bienici.com/realEstateAds.json?filters=" + encodeURIComponent(JSON.stringify(filters));
 }
 
-// ---------- Supabase REST (PostgREST), sans dépendance ----------
-async function sb(path, opts={}){
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    ...opts,
-    headers: {
-      apikey: SERVICE_KEY,
-      authorization: `Bearer ${SERVICE_KEY}`,
-      "content-type": "application/json",
-      ...(opts.headers||{}),
-    },
-  });
-  if(!r.ok && r.status !== 409) throw new Error(`Supabase ${r.status}: ${await r.text()}`);
-  return r;
-}
-async function alreadySeen(portal, listingId){
-  const r = await sb(`seen?portal=eq.${portal}&listing_id=eq.${encodeURIComponent(listingId)}&select=listing_id`);
+// ---------- Supabase REST (client partagé, cf. _shared.mjs) ----------
+/** IDs déjà vus parmi `listingIds` — UNE requête groupée par page (pas du N+1). */
+async function seenAmong(portal, listingIds){
+  if(!listingIds.length) return new Set();
+  const list = listingIds.map(id => `"${String(id).replaceAll('"','')}"`).join(",");
+  const r = await sb(`seen?portal=eq.${portal}&listing_id=in.(${encodeURIComponent(list)})&select=listing_id`);
   const rows = await r.json();
-  return rows.length > 0;
+  return new Set(rows.map(x => String(x.listing_id)));
 }
 async function markSeen(portal, listingId){
   await sb(`seen`, { method:"POST", headers:{ Prefer:"resolution=ignore-duplicates" },
-    body: JSON.stringify({ portal, listing_id: listingId }) });
+    body: JSON.stringify({ portal, listing_id: listingId }) }, { allow409: true });
 }
 async function upsertCase(c){
   await sb(`cases`, { method:"POST", headers:{ Prefer:"resolution=merge-duplicates" },
-    body: JSON.stringify(c) });
+    body: JSON.stringify(c) }, { allow409: true });
 }
 
 // ---------- Mapping fiche Bien'ici -> dossier de cas ----------
@@ -144,29 +134,12 @@ function stripHeavy(ad){ const { photos, ...rest } = ad; return rest; }
 //              → { candidates: ResolvedAddress[], usage, debug }
 // NB : par défaut on N'APPELLE PAS l'endpoint — la résolution se fait en local
 // avec l'algo du repo (`pnpm resolve-pending`), sans quota et toujours à jour.
-const TYPE_INPUT = { maison: "Maison", appartement: "Appartement", immeuble: "Immeuble" };
 async function resolve(extracted, listingUrl){
   if(!RESOLVE_ENDPOINT) return null;
   try{
-    const geo = extracted.marker?.lat != null && extracted.marker?.lon != null ? {
-      lat: extracted.marker.lat, lon: extracted.marker.lon,
-      radiusM: extracted.marker.radiusM, precise: extracted.marker.precise === true,
-    } : undefined;
-    const payload = {
-      deviceHash: "collector",
-      listingUrl,
-      input: {
-        postalCode: extracted.postalCode, city: extracted.city ?? undefined,
-        surface: extracted.surface ?? undefined, rooms: extracted.rooms ?? undefined,
-        landSurface: extracted.landSurface ?? undefined,
-        yearBuilt: extracted.year ?? undefined,
-        dpeClass: extracted.dpeClass ?? undefined, dpeKwhM2: extracted.dpeKwh ?? undefined,
-        gesClass: extracted.gesClass ?? undefined, gesKgCO2M2: extracted.gesVal ?? undefined,
-        dpeDate: extracted.dpeDate ?? undefined,
-        propertyType: TYPE_INPUT[extracted.propertyType] ?? undefined,
-        geo,
-      },
-    };
+    const input = toResolverInput(extracted);
+    if(!input) return { error: "extracted sans code postal" };
+    const payload = { deviceHash: "collector", listingUrl, input };
     const r = await fetch(RESOLVE_ENDPOINT, { method:"POST",
       headers:{ "content-type":"application/json", ...(RESOLVE_AUTH?{authorization:RESOLVE_AUTH}:{}) },
       body: JSON.stringify(payload) });
@@ -179,8 +152,7 @@ async function resolve(extracted, listingUrl){
         confidence: top.confidence, status: top.status,
         ademeCertId: top.ademeCertId, parcelId: top.parcelId, flags: top.flags ?? [],
       } : { address:null, confidence:0, status:"unresolved" },
-      candidates: (data.candidates||[]).map(c=>({ address:c.address, confidence:c.confidence,
-        numero_dpe:c.ademeCertId, dist_m:c.distanceM ?? null })),
+      candidates: (data.candidates||[]).map(toCandidateRow),
       score_breakdown: top?.matchBreakdown || [],
     };
   }catch(e){
@@ -211,9 +183,13 @@ async function run(){
       // si la page ne contient plus la commune ciblée, on arrête (Bien'ici a basculé sur le périmètre élargi)
       if(wanted.length === 0 && ads.every(a => String(a.postalCode)!==com.postalCode)) break;
 
+      // Dédup contre `seen` en UNE requête pour toute la page.
+      const seenIds = await seenAmong("bienici", wanted.map(a => a.id));
+
       for(const ad of wanted){
         if(collected >= MAX_PER_RUN) break;
-        if(await alreadySeen("bienici", ad.id)) continue;
+        if(seenIds.has(String(ad.id))) continue;
+        seenIds.add(String(ad.id)); // au cas où l'annonce apparaît deux fois dans la page
 
         try{
           // fiche riche (garantit blurInfo + date DPE)

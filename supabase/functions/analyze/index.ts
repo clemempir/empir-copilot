@@ -13,7 +13,7 @@
  * le score prix (réutilise buildQuickAnalysis côté client). Les enrichissements
  * Géorisques/PLU/taxe sont appelés best-effort en parallèle.
  */
-import { handleCorsPreflight, corsHeaders } from "../_shared/cors.ts";
+import { handleCorsPreflight, corsHeaders, jsonResponse as json } from "../_shared/cors.ts";
 
 interface Listing {
   url: string;
@@ -116,9 +116,10 @@ Deno.serve(async (req: Request) => {
   const lat = top?.lat ?? body.listing.location.lat;
   const lon = top?.lon ?? body.listing.location.lon;
 
-  // 2. Enrichissements parallèles (best-effort, ne bloquent pas le retour)
-  const [risks, plu, taxe] = await Promise.all([
-    fetchGeorisques(lat, lon).catch(() => null),
+  // 2. Enrichissements parallèles (best-effort, ne bloquent pas le retour).
+  // Les risques Géorisques sont récupérés côté client (use-risks) : plus la
+  // peine de les charger ici.
+  const [plu, taxe] = await Promise.all([
     fetchPlu(lat, lon).catch(() => null),
     fetchTaxeFonciere(body.listing.location.postalCode).catch(() => null),
   ]);
@@ -127,7 +128,7 @@ Deno.serve(async (req: Request) => {
     status: "ok",
     resolvedAddress: top,
     candidates: resolveData.candidates,
-    enrichments: { risks, plu, taxeFonciere: taxe },
+    enrichments: { plu, taxeFonciere: taxe },
     usage: resolveData.usage,
     debug: { resolverInput, ...(resolveData.debug ?? {}) },
   });
@@ -160,10 +161,29 @@ function extractYearBuilt(
  * résultat « centre-ville » tomberait par hasard près des disques de floutage
  * centrés sur la commune et créerait des faux positifs.
  */
-async function geocodeAgency(
+const agencyGeoCache = new Map<string, Promise<{ lat: number; lon: number } | undefined>>();
+
+function geocodeAgency(
   address: string | undefined,
 ): Promise<{ lat: number; lon: number } | undefined> {
-  if (!address) return undefined;
+  if (!address) return Promise.resolve(undefined);
+  // Une agence publie beaucoup d'annonces : on mémorise le géocodage de son
+  // adresse tant que l'instance edge reste chaude.
+  let cached = agencyGeoCache.get(address);
+  if (!cached) {
+    // Un échec réseau n'est pas mémorisé : on retentera au prochain appel.
+    cached = geocodeAgencyUncached(address).catch(() => {
+      agencyGeoCache.delete(address);
+      return undefined;
+    });
+    agencyGeoCache.set(address, cached);
+  }
+  return cached;
+}
+
+async function geocodeAgencyUncached(
+  address: string,
+): Promise<{ lat: number; lon: number } | undefined> {
   const url = `https://data.geopf.fr/geocodage/search?q=${encodeURIComponent(address)}&limit=1`;
   const res = await fetch(url);
   if (!res.ok) return undefined;
@@ -183,14 +203,6 @@ async function geocodeAgency(
   return { lon: coords[0], lat: coords[1] };
 }
 
-async function fetchGeorisques(lat: number | undefined, lon: number | undefined): Promise<unknown> {
-  if (lat == null || lon == null) return null;
-  const url = `https://www.georisques.gouv.fr/api/v1/gaspar/risques?rayon=10&latlon=${lon},${lat}`;
-  const res = await fetch(url);
-  if (!res.ok) return null;
-  return res.json();
-}
-
 async function fetchPlu(lat: number | undefined, lon: number | undefined): Promise<unknown> {
   if (lat == null || lon == null) return null;
   const geom = encodeURIComponent(JSON.stringify({ type: "Point", coordinates: [lon, lat] }));
@@ -206,11 +218,4 @@ async function fetchTaxeFonciere(postalCode: string | undefined): Promise<unknow
   const res = await fetch(url);
   if (!res.ok) return null;
   return res.json();
-}
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "content-type": "application/json" },
-  });
 }

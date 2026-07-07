@@ -7,7 +7,7 @@
  * usage_log anonymisé (user_id → null, le deviceHash reste pour le quota —
  * sinon supprimer son compte ré-offrirait les 3 essais gratuits).
  */
-import { handleCorsPreflight, corsHeaders } from "../_shared/cors.ts";
+import { handleCorsPreflight, corsHeaders, jsonResponse as json } from "../_shared/cors.ts";
 import { serviceClient, getAuthedUser } from "../_shared/supabase.ts";
 
 Deno.serve(async (req: Request) => {
@@ -26,10 +26,3 @@ Deno.serve(async (req: Request) => {
 
   return json({ deleted: true });
 });
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "content-type": "application/json" },
-  });
-}

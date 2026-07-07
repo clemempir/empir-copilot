@@ -1,37 +1,48 @@
-import { citycodeFromLatLon, fetchCommuneSales } from "@empir/core";
+import { citycodeFromLatLon, fetchCommuneSales, fetchRisks } from "@empir/core";
 
 /**
  * Caches mémoire (durée de vie du sidepanel) pour les appels d'enrichissement
- * partagés entre hooks : le code INSEE d'un point et les ventes DVF d'une
- * commune. Sans eux, `useMarket` et `useRisks` refont les mêmes requêtes
- * (reverse-geocode identique, CSV DVF de plusieurs Mo re-téléchargés) à chaque
- * re-déclenchement d'analyse. Une promesse rejetée est retirée du cache pour
- * permettre un retry.
+ * partagés entre hooks : le code INSEE d'un point, les ventes DVF et les
+ * risques Géorisques d'une commune. Sans eux, `useMarket` et `useRisks` refont
+ * les mêmes requêtes (reverse-geocode identique, CSV DVF de plusieurs Mo
+ * re-téléchargés) à chaque re-déclenchement d'analyse. Une promesse rejetée
+ * est retirée du cache pour permettre un retry ; les caches sont bornés
+ * (éviction du plus ancien) pour ne pas grossir sans limite quand on navigue
+ * d'annonce en annonce sur beaucoup de communes.
  */
 
-const citycodeCache = new Map<string, Promise<string | null>>();
+/** Mémoïse une fonction async dans une Map bornée (éviction du plus ancien). */
+function memoized<A extends unknown[], T>(
+  fn: (...args: A) => Promise<T>,
+  keyOf: (...args: A) => string,
+  maxEntries: number,
+): (...args: A) => Promise<T> {
+  const cache = new Map<string, Promise<T>>();
+  return (...args: A) => {
+    const key = keyOf(...args);
+    let p = cache.get(key);
+    if (!p) {
+      p = fn(...args);
+      cache.set(key, p);
+      p.catch(() => cache.delete(key));
+      if (cache.size > maxEntries) {
+        const oldest = cache.keys().next().value;
+        if (oldest !== undefined) cache.delete(oldest);
+      }
+    }
+    return p;
+  };
+}
 
 /** Code INSEE de la commune au point donné, mémoïsé (~10 m près). */
-export function cachedCitycode(lat: number, lon: number): Promise<string | null> {
-  const key = `${lat.toFixed(4)},${lon.toFixed(4)}`;
-  let p = citycodeCache.get(key);
-  if (!p) {
-    p = citycodeFromLatLon(lat, lon);
-    citycodeCache.set(key, p);
-    p.catch(() => citycodeCache.delete(key));
-  }
-  return p;
-}
+export const cachedCitycode = memoized(
+  citycodeFromLatLon,
+  (lat, lon) => `${lat.toFixed(4)},${lon.toFixed(4)}`,
+  50,
+);
 
-const salesCache = new Map<string, ReturnType<typeof fetchCommuneSales>>();
+/** Ventes DVF de la commune, mémoïsées par code INSEE (données volumineuses). */
+export const cachedCommuneSales = memoized(fetchCommuneSales, (citycode) => citycode, 5);
 
-/** Ventes DVF de la commune, mémoïsées par code INSEE. */
-export function cachedCommuneSales(citycode: string): ReturnType<typeof fetchCommuneSales> {
-  let p = salesCache.get(citycode);
-  if (!p) {
-    p = fetchCommuneSales(citycode);
-    salesCache.set(citycode, p);
-    p.catch(() => salesCache.delete(citycode));
-  }
-  return p;
-}
+/** Rapport de risques Géorisques de la commune, mémoïsé par code INSEE. */
+export const cachedRisks = memoized(fetchRisks, (citycode) => citycode, 20);
