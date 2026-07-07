@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
+import { browser } from "wxt/browser";
 import { getSupabase } from "@/lib/supabase";
+
+/** Resynchronise la pastille de l'icône Chrome (gérée par le background). */
+function pingBadge(): void {
+  void browser.runtime.sendMessage({ type: "REFRESH_BADGE" }).catch(() => {});
+}
 
 export interface NotificationRow {
   id: string;
@@ -47,12 +53,14 @@ export function useNotifications(userId: string | null): UseNotifications {
     if (!userId) return;
     await getSupabase().from("notifications").update({ read: true }).eq("user_id", userId);
     await refresh();
+    pingBadge();
   }, [userId, refresh]);
 
   const markRead = useCallback(
     async (id: string) => {
       await getSupabase().from("notifications").update({ read: true }).eq("id", id);
       await refresh();
+      pingBadge();
     },
     [refresh],
   );

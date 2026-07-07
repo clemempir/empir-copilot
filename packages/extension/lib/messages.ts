@@ -15,7 +15,9 @@ export type EmpirRequest =
   | { type: "LISTING_DETECTED"; listing: Listing }
   | { type: "GET_TAB_STATE"; tabId?: number }
   | { type: "RUN_ANALYSIS"; tabId: number }
-  | { type: "OPEN_SIDE_PANEL" };
+  | { type: "OPEN_SIDE_PANEL" }
+  /** Recalcule la pastille de l'icône Chrome (après lecture/réception). */
+  | { type: "REFRESH_BADGE" };
 
 export type EmpirEvent = { type: "TAB_STATE_CHANGED"; tabId: number; state: TabState };
 

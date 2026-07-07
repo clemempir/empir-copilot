@@ -4,6 +4,7 @@ import {
   buildQuickAnalysis,
   correctedLocation,
   explainPluZone,
+  type GeoPoint,
   type Listing,
   type QuickAnalysis,
 } from "@empir/core";
@@ -101,25 +102,17 @@ export default function App() {
     };
   }, []);
 
-  // Auto-run analysis on each new listing URL (déclenche aussi en SPA), une
-  // seule fois par URL — y compris en cas d'échec, pour éviter une boucle de
-  // retry.
-  const lastRunUrlRef = useRef<string | null>(null);
+  // L'analyse ne se lance PLUS automatiquement : l'utilisateur clique
+  // « Lancer l'analyse » (il peut ainsi consulter son compte sans consommer
+  // une analyse). Au changement d'annonce, on remet simplement l'état à zéro.
+  const lastUrlRef = useRef<string | null>(null);
   useEffect(() => {
     const url = tabState.listing?.url ?? null;
-    if (
-      tabState.status !== "detected" ||
-      !tabState.listing ||
-      !url ||
-      lastRunUrlRef.current === url
-    ) {
-      return;
-    }
-    lastRunUrlRef.current = url;
+    if (lastUrlRef.current === url) return;
+    lastUrlRef.current = url;
     setCorrectedListing(null); // nouvelle annonce → oublier la correction manuelle
     analyze.reset();
-    void analyze.run(tabState.listing);
-  }, [tabState.status, tabState.listing, analyze]);
+  }, [tabState.listing, analyze]);
 
   // L'annonce « effective » : corrigée à la main si l'utilisateur a saisi une
   // adresse, sinon celle détectée sur la page.
@@ -169,6 +162,24 @@ export default function App() {
 
   // ─── Screens ─────────────────────────────────────────────────────────────
 
+  // Adresse affirmée par l'utilisateur (saisie manuelle OU rapprochement
+  // validé) : localisation écrasée + marqueur précis sur le point → le
+  // résolveur cherche les DPE de CETTE adresse (gate serré ~30 m), et
+  // l'annonce corrigée remplace l'annonce détectée pour tout le pipeline.
+  const applyCorrectedAddress = (point: GeoPoint) => {
+    const l = activeListing;
+    if (!l) return;
+    // rawAddress = label BAN canonique (pas la frappe partielle) pour
+    // l'affichage et la comparaison avec l'adresse résolue.
+    const corrected: Listing = {
+      ...l,
+      location: correctedLocation(point.label, point),
+      geo: { lat: point.lat, lon: point.lon, precise: true },
+    };
+    setCorrectedListing(corrected);
+    void analyze.run(corrected);
+  };
+
   // Session ouverte (compte créé+vérifié, connexion, ou reset du mot de
   // passe) : retour à l'analyse, et si le mur des 3 essais avait bloqué,
   // l'analyse est relancée — le compte vérifié est illimité.
@@ -214,7 +225,7 @@ export default function App() {
           // la monétisation passe par l'application SaaS séparée).
           tier: "unlimited",
           analysesUsed: usage.used,
-          analysesLimit: FREE_TRIALS,
+          analysesLimit: usage.limit ?? FREE_TRIALS,
         }}
         notifications={notifs.items.map((n) => ({
           id: String(n.id),
@@ -234,7 +245,16 @@ export default function App() {
           onRemove: () => void saved.remove(String(s.id)),
         }))}
         onBack={() => setScreen("main")}
-        onUpgradeClick={() => undefined}
+        onUpdateProfile={async ({ name, email }) => {
+          const currentName =
+            (auth.user?.user_metadata?.full_name as string | undefined) ?? "";
+          if (name && name !== currentName) await auth.updateName(name);
+          if (email && email !== auth.user?.email) {
+            await auth.updateEmail(email);
+            return `Un e-mail de confirmation a été envoyé à ${email} — la nouvelle adresse prendra effet après validation.`;
+          }
+          return null;
+        }}
         onLogout={async () => {
           await auth.signOut();
           setScreen("main");
@@ -255,7 +275,16 @@ export default function App() {
 
   return (
     <div className="relative flex h-screen flex-col bg-empir-bg text-empir-text">
-      {mainStatus === "idle" && <IdleView />}
+      {mainStatus === "idle" && (
+        <IdleView
+          listing={tabState.status === "detected" ? tabState.listing : null}
+          onAnalyze={() => {
+            if (tabState.listing) void analyze.run(tabState.listing);
+          }}
+          onAccountClick={() => setScreen("account")}
+          hasUnread={notifs.items.some((n) => !n.read)}
+        />
+      )}
       {mainStatus === "analyzing" && <AnalyzingView />}
       {mainStatus === "result" && activeListing && (
         <ResultView
@@ -266,28 +295,30 @@ export default function App() {
           onSaveClick={() => {
             if (!auth.user) return setScreen("signup");
             if (!activeListing) return;
-            void saved.save(activeListing, {
-              score: quick.score ?? undefined,
-              address: analyze.result?.resolvedAddress?.address,
-            });
+            // Bascule : re-cliquer sur le cœur retire l'annonce des favoris.
+            const existing = saved.items.find((i) => i.listing_url === activeListing.url);
+            if (existing) {
+              void saved.remove(existing.id);
+            } else {
+              void saved.save(activeListing, {
+                score: quick.score ?? undefined,
+                address: analyze.result?.resolvedAddress?.address,
+              });
+            }
           }}
           onAccountClick={() => setScreen("account")}
-          onAddressSubmit={(point, userInput) => {
-            const l = activeListing;
-            if (!l) return;
-            // L'adresse saisie devient la vérité : localisation écrasée +
-            // marqueur précis sur le point géocodé → le résolveur cherche les
-            // DPE de CETTE adresse (gate serré ~30 m). Relance une analyse.
-            // rawAddress = label BAN canonique (pas la frappe partielle) pour
-            // l'affichage et la comparaison avec l'adresse résolue.
-            void userInput;
-            const corrected: Listing = {
-              ...l,
-              location: correctedLocation(point.label, point),
-              geo: { lat: point.lat, lon: point.lon, precise: true },
-            };
-            void analyze.run(corrected);
-          }}
+          onAddressSubmit={applyCorrectedAddress}
+          candidates={analyze.result?.candidates ?? []}
+          onCandidateValidate={(c) =>
+            applyCorrectedAddress({
+              lat: c.lat,
+              lon: c.lon,
+              label: c.address,
+              citycode: "",
+              score: c.confidence / 100,
+              precision: "housenumber",
+            })
+          }
           hasUnread={notifs.items.some((n) => !n.read)}
           risks={risksState.risks}
           urbanisme={analyze.result?.enrichments?.plu ? mapUrbanisme(analyze.result.enrichments.plu) : []}

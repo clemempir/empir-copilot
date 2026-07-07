@@ -47,8 +47,8 @@ export default defineConfig({
     },
     permissions:
       browser === "firefox"
-        ? ["storage", "tabs", "identity"]
-        : ["storage", "sidePanel", "tabs", "identity"],
+        ? ["storage", "tabs", "identity", "alarms"]
+        : ["storage", "sidePanel", "tabs", "identity", "alarms"],
     host_permissions: HOST_PERMISSIONS,
     ...(browser === "firefox" && {
       browser_specific_settings: {

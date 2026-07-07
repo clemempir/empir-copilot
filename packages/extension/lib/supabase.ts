@@ -22,6 +22,11 @@ const chromeStorageAdapter = {
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
+/** Page « compte confirmé » — cible du lien de l'e-mail de confirmation. */
+export const EMAIL_CONFIRMED_URL = SUPABASE_URL
+  ? `${SUPABASE_URL}/functions/v1/confirmed`
+  : undefined;
+
 let cached: SupabaseClient | null = null;
 
 export function getSupabase(): SupabaseClient {
@@ -49,6 +54,14 @@ export function getSupabase(): SupabaseClient {
  */
 const DEVICE_INSTALL_ID_KEY = "empir:install-id";
 
+/** Empreinte SHA-256 d'une chaîne, en hexadécimal. */
+export async function sha256Hex(s: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 export async function getDeviceHash(): Promise<string> {
   const stored = await browser.storage.local.get(DEVICE_INSTALL_ID_KEY);
   let installId = stored[DEVICE_INSTALL_ID_KEY] as string | undefined;
@@ -57,12 +70,8 @@ export async function getDeviceHash(): Promise<string> {
     await browser.storage.local.set({ [DEVICE_INSTALL_ID_KEY]: installId });
   }
   const ua = typeof navigator !== "undefined" ? navigator.userAgent : "sw";
-  const raw = `${installId}::${ua}`;
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw));
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("")
-    .slice(0, 32);
+  const hash = await sha256Hex(`${installId}::${ua}`);
+  return hash.slice(0, 32);
 }
 
 /** Helper pour appeler une Edge Function avec auth optionnel. */

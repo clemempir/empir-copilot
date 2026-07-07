@@ -1,6 +1,7 @@
 import { browser } from "wxt/browser";
 import { detectSite, isListingPage, type Listing } from "@empir/core";
 import type { EmpirRequest, TabState } from "@/lib/messages";
+import { getSupabase } from "@/lib/supabase";
 
 const tabStates = new Map<number, TabState>();
 const TAB_STATES_STORAGE_KEY = "tabStates";
@@ -39,42 +40,51 @@ function hydrateTabStates(): Promise<void> {
 }
 
 /**
- * Active/désactive le sidepanel PAR ONGLET. Sans cela, un panneau ouvert suit
- * l'utilisateur sur tous les onglets/fenêtres (nouvel onglet, lien Google
- * Maps…) en restant vide. Ici : panneau disponible uniquement là où une
- * annonce est détectée — Chrome le ferme automatiquement ailleurs.
+ * Pastille rouge sur l'icône Chrome = nombre de notifications non lues du
+ * compte connecté. Rafraîchie par chrome.alarms (~5 min — un websocket
+ * « temps réel » mourrait avec le service worker MV3), au démarrage, et à la
+ * demande du sidepanel (message REFRESH_BADGE après lecture/broadcast).
  */
-function setPanelEnabled(tabId: number, enabled: boolean): void {
-  const sp = browser.sidePanel as
-    | { setOptions?: (o: { tabId: number; path?: string; enabled: boolean }) => Promise<void> }
-    | undefined;
-  void sp?.setOptions?.({ tabId, ...(enabled ? { path: "sidepanel.html" } : {}), enabled })
-    .catch(() => {});
+const BADGE_ALARM = "empir:badge";
+const BADGE_PERIOD_MIN = 5;
+
+async function refreshBadge(): Promise<void> {
+  try {
+    const supa = getSupabase();
+    const { data } = await supa.auth.getSession();
+    const userId = data.session?.user?.id;
+    let unread = 0;
+    if (userId) {
+      const { count } = await supa
+        .from("notifications")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .eq("read", false);
+      unread = count ?? 0;
+    }
+    await browser.action.setBadgeText({ text: unread > 0 ? String(Math.min(unread, 99)) : "" });
+    if (unread > 0) await browser.action.setBadgeBackgroundColor({ color: "#ff5d73" });
+  } catch {
+    /* hors-ligne ou non configuré — on garde la pastille telle quelle */
+  }
 }
 
 export default defineBackground(() => {
   if (browser.sidePanel && "setPanelBehavior" in browser.sidePanel) {
     // Clic sur l'icône géré nativement par Chrome (fiable côté gestes).
+    // Le panneau est disponible PARTOUT : hors annonce il sert à consulter
+    // son compte et ses notifications (l'écran d'accueil s'adapte).
     browser.sidePanel
       .setPanelBehavior({ openPanelOnActionClick: true })
       .catch(() => {});
-    // Le panneau n'existe QUE sur les onglets d'annonces (activé à la
-    // détection). Un défaut global « enabled » ferait renaître le panneau
-    // dans chaque nouvelle fenêtre (comportement Chrome) — donc désactivé
-    // par défaut, partout. Conséquence assumée : l'icône n'ouvre rien sur
-    // les pages sans annonce.
-    (browser.sidePanel as { setOptions?: (o: { enabled: boolean }) => Promise<void> })
-      .setOptions?.({ enabled: false })
-      .catch(() => {});
-    // Après un rechargement de l'extension, ré-active le panneau sur les
-    // onglets d'annonces déjà détectés (les options par onglet sont perdues
-    // au reload, l'état détecté survit en session storage).
-    void hydrateTabStates().then(() => {
-      for (const [tabId, st] of tabStates) {
-        if (st.status !== "idle") setPanelEnabled(tabId, true);
-      }
-    });
   }
+
+  // Pastille de notifications : au réveil du service worker + toutes les 5 min.
+  void browser.alarms.create(BADGE_ALARM, { periodInMinutes: BADGE_PERIOD_MIN });
+  browser.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === BADGE_ALARM) void refreshBadge();
+  });
+  void refreshBadge();
 
   browser.runtime.onMessage.addListener((msg: EmpirRequest, sender, sendResponse) => {
     (async () => {
@@ -82,7 +92,6 @@ export default defineBackground(() => {
       const tabId = sender.tab?.id ?? (msg as { tabId?: number }).tabId;
 
       if (msg.type === "LISTING_DETECTED" && tabId !== undefined) {
-        setPanelEnabled(tabId, true);
         await setTabState(tabId, { status: "detected", listing: msg.listing });
         sendResponse({ ok: true });
         return;
@@ -99,13 +108,17 @@ export default defineBackground(() => {
           return;
         }
         await setTabState(msg.tabId, { ...state, status: "analyzing" });
-        // TODO (task 7): POST to Supabase Edge Function `analyze` with listing payload
         sendResponse({ ok: true });
         return;
       }
       if (msg.type === "OPEN_SIDE_PANEL" && tabId !== undefined) {
         const sp = browser.sidePanel as { open?: (opts: { tabId: number }) => Promise<void> };
         await sp.open?.({ tabId }).catch(() => {});
+        sendResponse({ ok: true });
+        return;
+      }
+      if (msg.type === "REFRESH_BADGE") {
+        await refreshBadge();
         sendResponse({ ok: true });
         return;
       }
@@ -118,7 +131,6 @@ export default defineBackground(() => {
     if (change.url && tab.url) {
       const url = tab.url;
       if (!isListingPage(url) || !detectSite(url)) {
-        setPanelEnabled(tabId, false);
         await setTabState(tabId, { status: "idle" });
       }
     }

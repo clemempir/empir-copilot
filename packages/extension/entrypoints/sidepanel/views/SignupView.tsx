@@ -31,26 +31,31 @@ export interface SignupViewProps {
   contextLabel?: string;
 }
 
-const TITLES: Record<Mode, { title: string; sub: string }> = {
+const TITLES: Record<Mode, { title: string; sub: string; cta: string }> = {
   signup: {
     title: "Créez un compte EMPIR",
     sub: "Compte gratuit et vérifié : analyses illimitées, annonces sauvegardées, alertes.",
+    cta: "Créer mon compte",
   },
   login: {
     title: "Content de vous revoir",
     sub: "Connectez-vous pour retrouver vos analyses illimitées et vos biens sauvegardés.",
+    cta: "Se connecter",
   },
   confirm: {
     title: "Vérifiez votre e-mail",
     sub: "Saisissez le code à 6 chiffres que nous venons de vous envoyer.",
+    cta: "Vérifier",
   },
   forgot: {
     title: "Mot de passe oublié",
     sub: "Indiquez votre e-mail : nous vous envoyons un code de réinitialisation.",
+    cta: "Envoyer le code",
   },
   reset: {
     title: "Nouveau mot de passe",
     sub: "Saisissez le code reçu par e-mail et choisissez un nouveau mot de passe.",
+    cta: "Changer le mot de passe",
   },
 };
 
@@ -223,17 +228,7 @@ export function SignupView({
             />
           )}
           <EmpirButton type="submit" size="lg" className="mt-1" disabled={busy}>
-            {busy
-              ? "Un instant…"
-              : mode === "signup"
-                ? "Créer mon compte"
-                : mode === "login"
-                  ? "Se connecter"
-                  : mode === "confirm"
-                    ? "Vérifier"
-                    : mode === "forgot"
-                      ? "Envoyer le code"
-                      : "Changer le mot de passe"}
+            {busy ? "Un instant…" : TITLES[mode].cta}
           </EmpirButton>
         </form>
 

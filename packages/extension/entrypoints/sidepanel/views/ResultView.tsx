@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { ExternalLink, Heart, MapPin, PencilLine, User } from "lucide-react";
+import { Check, ChevronDown, ExternalLink, Heart, MapPin, PencilLine, User } from "lucide-react";
+import { stripAccentsLower } from "@empir/core";
 import type { GeoPoint, Listing, QuickAnalysis } from "@empir/core";
 import type { ResolvedAddress } from "@empir/core";
 import { cn } from "@/lib/utils";
@@ -21,13 +22,16 @@ export interface ResultViewProps {
   listing: Listing;
   quick: QuickAnalysis;
   resolvedAddress?: ResolvedAddress;
+  /** Tous les rapprochements d'adresse trouvés par l'algo (liste déroulante). */
+  candidates?: ResolvedAddress[];
+  /** L'utilisateur valide un rapprochement → il devient l'adresse affirmée. */
+  onCandidateValidate?: (candidate: ResolvedAddress) => void;
   comparablesMeta?: string;
   risks?: { label: string; level: RiskLevel; statusLabel?: string }[];
   urbanisme?: { zone: string; subtitle?: string; description?: string; tone?: "default" | "warn" | "info" }[];
   salesHistory?: { year: number; price: number }[];
   /** Résumé d'évolution sous la frise, ex. « +22 % depuis 2021 · +4 %/an ». */
   salesSummary?: string | null;
-  usage?: { used: number; limit: number };
   /** Notification non lue → pastille rouge sur le bouton compte. */
   hasUnread?: boolean;
   onSaveClick: () => void;
@@ -38,11 +42,14 @@ export interface ResultViewProps {
    * Le lien « Je connais l'adresse » n'apparaît que si la localisation n'est
    * pas confirmée (confiance < 75 %) — zéro pollution quand l'algo est sûr.
    */
-  onAddressSubmit?: (point: GeoPoint, userInput: string) => void;
+  onAddressSubmit?: (point: GeoPoint) => void;
 }
 
 /** Sous ce seuil, la localisation n'est pas « confirmée » → saisie proposée. */
 const CONFIDENCE_CONFIRMED = 75;
+
+const mapsUrl = (address: string) =>
+  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
 
 function splitAddress(addr: string): { line1: string; line2?: string } {
   const m = addr.match(/^(.*?)(?:\s+)(\d{5}\b.*)$/);
@@ -53,10 +60,7 @@ function splitAddress(addr: string): { line1: string; line2?: string } {
 /** Comparaison d'adresses tolérante (casse, accents, espaces). */
 function sameAddress(a: string, b: string): boolean {
   const norm = (s: string) =>
-    s
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[̀-ͯ]/g, "")
+    stripAccentsLower(s)
       .replace(/[^a-z0-9]+/g, " ")
       .trim();
   return norm(a) === norm(b);
@@ -93,6 +97,8 @@ export function ResultView({
   listing,
   quick,
   resolvedAddress,
+  candidates = [],
+  onCandidateValidate,
   comparablesMeta,
   risks = [],
   urbanisme = [],
@@ -105,6 +111,11 @@ export function ResultView({
   onAddressSubmit,
 }: ResultViewProps) {
   const [editingAddress, setEditingAddress] = useState(false);
+  const [showCandidates, setShowCandidates] = useState(false);
+  // Rapprochements affichables : une adresse concrète, sans doublon.
+  const candidateRows = candidates.filter(
+    (c, i) => c.address && candidates.findIndex((o) => o.address === c.address) === i,
+  );
   // Adresse saisie à la main = vérité : elle reste affichée, et le résultat du
   // résolveur n'est retenu que s'il concerne EXACTEMENT cette adresse (sinon il
   // désignerait le voisin le plus proche avec une confiance trompeuse).
@@ -122,15 +133,11 @@ export function ResultView({
   const unresolvedCandidate = !manualAddress && !resolvedOk && !!resolvedAddress;
   const address = manualAddress ?? resolvedOk?.address ?? listing.location.rawAddress ?? "";
   const { line1, line2 } = splitAddress(address);
-  // Surface habitable réelle issue du DPE ADEME (colonne « Réel »).
-  const realSurface =
-    resolvedOk?.verifiedDpe?.surfaceM2 != null
-      ? Math.round(resolvedOk.verifiedDpe.surfaceM2)
-      : null;
+  // Surface habitable réelle issue du DPE ADEME (colonne « Réel ») — valeur
+  // exacte du certificat, à la décimale près (ex. 162,2 m²), pas d'arrondi.
+  const realSurface = resolvedOk?.verifiedDpe?.surfaceM2 ?? null;
   const propVisual = PROPERTY_VISUALS[propertyKind(listing)];
-  const mapsHref = address
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
-    : null;
+  const mapsHref = address ? mapsUrl(address) : null;
   // Saisie manuelle proposée seulement quand la localisation n'est pas confirmée.
   const canEditAddress =
     !!onAddressSubmit &&
@@ -243,9 +250,9 @@ export function ResultView({
                     (resolved?.lat ? { lat: resolved.lat, lon: resolved.lon } : undefined)
                   }
                   onCancel={() => setEditingAddress(false)}
-                  onSubmit={(point, userInput) => {
+                  onSubmit={(point) => {
                     setEditingAddress(false);
-                    onAddressSubmit(point, userInput);
+                    onAddressSubmit(point);
                   }}
                 />
               ) : (
@@ -340,6 +347,73 @@ export function ResultView({
               </span>
             </div>
           </div>
+
+          {/* Rapprochements d'adresse trouvés par l'algo (liste déroulante) */}
+          {!editingAddress && candidateRows.length > 0 && (
+            <div
+              className="mt-[13px] border-t pt-[9px]"
+              style={{ borderTopColor: "rgba(255,255,255,0.06)" }}
+            >
+              <button
+                type="button"
+                onClick={() => setShowCandidates((v) => !v)}
+                className="flex w-full items-center justify-between text-[8.5px] font-semibold uppercase tracking-[0.08em] text-empir-muted-2 transition-colors hover:text-empir-muted"
+              >
+                <span>
+                  Rapprochements d'adresse ({candidateRows.length})
+                </span>
+                <ChevronDown
+                  className={cn("size-3 transition-transform", showCandidates && "rotate-180")}
+                  strokeWidth={1.8}
+                />
+              </button>
+              {showCandidates && (
+                <div className="mt-[6px]">
+                  {candidateRows.map((c, i) => (
+                    <div
+                      key={`${c.address}-${i}`}
+                      className="flex items-center gap-[7px] rounded-[6px] px-[4px] py-[5px] transition-colors hover:bg-white/[0.04]"
+                    >
+                      <span
+                        className="min-w-0 flex-1 truncate text-[10px] leading-[1.35] text-empir-muted"
+                        title={c.address}
+                      >
+                        {c.address}
+                      </span>
+                      <span
+                        className="shrink-0 text-[9.5px] font-bold tabular-nums"
+                        style={{ color: c.confidence < 60 ? "#f87171" : "#4ade80" }}
+                        title="Fiabilité"
+                      >
+                        {Math.round(c.confidence)}%
+                      </span>
+                      {onCandidateValidate && (
+                        <button
+                          type="button"
+                          onClick={() => onCandidateValidate(c)}
+                          title="Valider cette adresse"
+                          className="grid size-[20px] shrink-0 place-items-center rounded-[5px] transition-all hover:bg-white/10"
+                          style={{ background: "rgba(255,255,255,0.05)" }}
+                        >
+                          <Check className="size-[11px] text-empir-muted" strokeWidth={2} />
+                        </button>
+                      )}
+                      <a
+                        href={mapsUrl(c.address)}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="Voir sur Google Maps"
+                        className="grid size-[20px] shrink-0 place-items-center rounded-[5px] transition-all hover:bg-white/10"
+                        style={{ background: "rgba(255,255,255,0.05)" }}
+                      >
+                        <ExternalLink className="size-[10px] text-empir-muted" strokeWidth={1.8} />
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         {/* ─── CARACTÉRISTIQUES ─── */}
@@ -377,7 +451,7 @@ export function ResultView({
             <CharRow
               label="Surface habitable"
               shown={`${listing.surface} m²`}
-              real={realSurface != null ? `${realSurface} m²` : undefined}
+              real={realSurface != null ? `${realSurface.toLocaleString("fr-FR")} m²` : undefined}
               mismatch={realSurface != null && Math.abs(realSurface - listing.surface) / listing.surface > 0.05}
             />
           )}

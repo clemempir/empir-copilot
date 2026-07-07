@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { browser } from "wxt/browser";
-import { getSupabase } from "@/lib/supabase";
+import { EMAIL_CONFIRMED_URL, getSupabase, sha256Hex } from "@/lib/supabase";
 
 export interface UseAuth {
   user: User | null;
@@ -19,14 +19,11 @@ export interface UseAuth {
   requestPasswordReset(email: string): Promise<void>;
   /** Vérifie le code de récupération puis pose le nouveau mot de passe. */
   resetPasswordWithCode(email: string, code: string, newPassword: string): Promise<void>;
+  /** Met à jour le nom affiché (immédiat, métadonnée du compte). */
+  updateName(name: string): Promise<void>;
+  /** Demande un changement d'e-mail — Supabase envoie une confirmation. */
+  updateEmail(email: string): Promise<void>;
   signOut(): Promise<void>;
-}
-
-async function sha256Hex(s: string): Promise<string> {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
 }
 
 /** Traduit les erreurs Supabase Auth courantes en messages utilisateur. */
@@ -72,10 +69,16 @@ export function useAuth(): UseAuth {
     session,
     loading,
     async signUpWithEmail(email, password) {
-      const { data, error } = await supa.auth.signUp({ email, password });
+      const { data, error } = await supa.auth.signUp({
+        email,
+        password,
+        // Le lien de l'e-mail atterrit sur la page « compte confirmé ».
+        options: { emailRedirectTo: EMAIL_CONFIRMED_URL },
+      });
       if (error) throw error;
       // Confirmation activée → pas de session tant que l'e-mail n'est pas
-      // vérifié (l'utilisateur saisit le code reçu, cf. verifySignupCode).
+      // vérifié (lien cliqué, détecté par polling — ou code saisi, cf.
+      // verifySignupCode).
       return { needsConfirmation: data.session == null };
     },
     async signInWithEmail(email, password) {
@@ -122,8 +125,25 @@ export function useAuth(): UseAuth {
       const { error } = await supa.auth.verifyOtp({ type: "signup", email, token: code.trim() });
       if (error) throw error;
     },
+    async updateName(name) {
+      const { error } = await supa.auth.updateUser({ data: { full_name: name } });
+      if (error) throw error;
+    },
+    async updateEmail(email) {
+      // Changement d'e-mail sécurisé : Supabase envoie une confirmation (le
+      // changement ne prend effet qu'après validation).
+      const { error } = await supa.auth.updateUser(
+        { email },
+        { emailRedirectTo: EMAIL_CONFIRMED_URL },
+      );
+      if (error) throw error;
+    },
     async resendSignupCode(email) {
-      const { error } = await supa.auth.resend({ type: "signup", email });
+      const { error } = await supa.auth.resend({
+        type: "signup",
+        email,
+        options: { emailRedirectTo: EMAIL_CONFIRMED_URL },
+      });
       if (error) throw error;
     },
     async requestPasswordReset(email) {

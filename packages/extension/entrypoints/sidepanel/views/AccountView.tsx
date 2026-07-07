@@ -6,12 +6,13 @@ import {
   ChevronRight,
   HelpCircle,
   LogOut,
+  PencilLine,
   Settings,
   Trash2,
 } from "lucide-react";
+import { frenchAuthError } from "@/lib/hooks/use-auth";
 import {
   EmpirButton,
-  EmpirLogo,
   NotificationCard,
   SavedListingCard,
 } from "@/components/empir";
@@ -38,13 +39,17 @@ export interface AccountViewProps {
     onRemove?: () => void;
   }[];
   onBack: () => void;
-  onUpgradeClick: () => void;
+  /**
+   * Enregistre nom et/ou e-mail. Retourne un message d'information à afficher
+   * (ex. « confirmez la nouvelle adresse par e-mail »), ou null.
+   */
+  onUpdateProfile?: (fields: { name: string; email: string }) => Promise<string | null>;
   onLogout: () => void;
   /** Suppression définitive du compte (RGPD) — demande une confirmation. */
   onDeleteAccount?: () => Promise<void> | void;
   onMarkAllRead?: () => void;
   onNotificationClick?: (id: string) => void;
-  onNavigate?: (target: "alerts" | "billing" | "prefs" | "help") => void;
+  onNavigate?: (target: "alerts" | "prefs" | "help") => void;
 }
 
 const initials = (s: string) =>
@@ -61,7 +66,7 @@ export function AccountView({
   notifications,
   savedListings,
   onBack,
-  onUpgradeClick,
+  onUpdateProfile,
   onLogout,
   onDeleteAccount,
   onMarkAllRead,
@@ -71,6 +76,33 @@ export function AccountView({
   const unread = notifications.filter((n) => !n.read).length;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [emailDraft, setEmailDraft] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileMsg, setProfileMsg] = useState<string | null>(null);
+  const [profileErr, setProfileErr] = useState<string | null>(null);
+
+  const startEditProfile = () => {
+    setNameDraft(user.name ?? "");
+    setEmailDraft(user.email);
+    setProfileMsg(null);
+    setProfileErr(null);
+    setEditingProfile(true);
+  };
+
+  const saveProfile = () => {
+    if (!onUpdateProfile) return;
+    setSavingProfile(true);
+    setProfileErr(null);
+    onUpdateProfile({ name: nameDraft.trim(), email: emailDraft.trim() })
+      .then((msg) => {
+        setEditingProfile(false);
+        setProfileMsg(msg);
+      })
+      .catch((e) => setProfileErr(frenchAuthError(e)))
+      .finally(() => setSavingProfile(false));
+  };
   return (
     <div className="flex h-full flex-col bg-empir-bg">
       <header className="flex items-center justify-between px-4 py-3">
@@ -82,44 +114,94 @@ export function AccountView({
           <ArrowLeft className="size-4" />
           Retour à l'analyse
         </button>
-        <EmpirLogo size="sm" withText={false} />
       </header>
 
       <div className="empir-scroll flex-1 overflow-y-auto px-4 pb-6">
         {/* Profil */}
-        <section className="mt-2 flex items-center gap-3 rounded-empir-card-lg border border-empir-line bg-empir-card p-4">
-          <div className="grid size-12 place-items-center rounded-empir-pill bg-gradient-to-br from-empir-primary to-empir-primary-dark text-[14px] font-semibold text-white">
-            {user.avatarUrl ? (
-              <img src={user.avatarUrl} alt="" className="size-full rounded-empir-pill object-cover" />
-            ) : (
-              <span>{initials(user.name ?? user.email)}</span>
+        <section className="mt-2 rounded-empir-card-lg border border-empir-line bg-empir-card p-4">
+          <div className="flex items-center gap-3">
+            <div className="grid size-12 shrink-0 place-items-center rounded-empir-pill bg-gradient-to-br from-empir-primary to-empir-primary-dark text-[14px] font-semibold text-white">
+              {user.avatarUrl ? (
+                <img src={user.avatarUrl} alt="" className="size-full rounded-empir-pill object-cover" />
+              ) : (
+                <span>{initials(user.name ?? user.email)}</span>
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[13.5px] font-semibold text-empir-text">
+                {user.name ?? user.email.split("@")[0]}
+              </div>
+              <div className="truncate text-[11px] text-empir-muted">{user.email}</div>
+            </div>
+            {onUpdateProfile && !editingProfile && (
+              <button
+                type="button"
+                onClick={startEditProfile}
+                title="Modifier mon nom ou mon e-mail"
+                className="grid size-6 shrink-0 place-items-center rounded-[7px] text-empir-muted-2 transition-colors hover:bg-white/5 hover:text-empir-text"
+              >
+                <PencilLine className="size-3" strokeWidth={1.8} />
+              </button>
             )}
           </div>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-[13.5px] font-semibold text-empir-text">
-              {user.name ?? user.email.split("@")[0]}
+
+          {editingProfile && (
+            <div className="mt-4 flex flex-col gap-2">
+              <input
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                placeholder="Nom affiché"
+                className="h-9 rounded-empir-btn border border-empir-line bg-white/5 px-3 text-[12.5px] text-empir-text placeholder:text-empir-muted-2 focus:border-empir-primary/60 focus:outline-none"
+              />
+              <input
+                type="email"
+                value={emailDraft}
+                onChange={(e) => setEmailDraft(e.target.value)}
+                placeholder="Adresse e-mail"
+                className="h-9 rounded-empir-btn border border-empir-line bg-white/5 px-3 text-[12.5px] text-empir-text placeholder:text-empir-muted-2 focus:border-empir-primary/60 focus:outline-none"
+              />
+              <div className="mt-1 flex gap-2">
+                <EmpirButton
+                  type="button"
+                  variant="secondary"
+                  className="flex-1"
+                  onClick={() => setEditingProfile(false)}
+                  disabled={savingProfile}
+                >
+                  Annuler
+                </EmpirButton>
+                <EmpirButton
+                  type="button"
+                  className="flex-1"
+                  onClick={saveProfile}
+                  disabled={savingProfile || (!nameDraft.trim() && !emailDraft.trim())}
+                >
+                  {savingProfile ? "Enregistrement…" : "Enregistrer"}
+                </EmpirButton>
+              </div>
             </div>
-            <div className="truncate text-[11px] text-empir-muted">{user.email}</div>
-          </div>
+          )}
+
+          {profileErr && (
+            <p className="mt-3 text-[11px] leading-relaxed text-empir-danger">{profileErr}</p>
+          )}
+          {profileMsg && (
+            <p className="mt-3 text-[11px] leading-relaxed text-empir-accent">{profileMsg}</p>
+          )}
         </section>
 
         {/* Plan */}
         <section className="mt-3 flex items-center justify-between gap-3 rounded-empir-card border border-empir-line bg-empir-card p-3.5">
           <div className="min-w-0">
             <div className="text-[10px] uppercase tracking-[0.2em] text-empir-muted-2">
-              Formule {plan.tier === "unlimited" ? "Illimitée" : "Gratuite"}
+              Formule
             </div>
             <div className="mt-1 text-[12.5px] text-empir-text">
               {plan.tier === "unlimited"
-                ? "Analyses illimitées · merci 🙏"
+                ? "Analyses illimitées"
                 : `${plan.analysesUsed} / ${plan.analysesLimit} analyses complètes ce mois-ci`}
             </div>
           </div>
-          {plan.tier === "free" && (
-            <EmpirButton type="button" size="sm" onClick={onUpgradeClick}>
-              Passer Pro
-            </EmpirButton>
-          )}
         </section>
 
         {/* Notifications */}
