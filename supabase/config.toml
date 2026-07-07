@@ -22,8 +22,14 @@ port = 54324
 
 [auth]
 enabled = true
-site_url = "http://localhost:3000"
-additional_redirect_urls = ["chrome-extension://*", "moz-extension://*"]
+# Page « compte confirmé » (fonction edge publique `confirmed`) : cible de
+# redirection du lien de confirmation d'e-mail.
+site_url = "https://coqvobufxwurgrsphhnq.supabase.co/functions/v1/confirmed"
+additional_redirect_urls = [
+  "chrome-extension://*",
+  "moz-extension://*",
+  "https://coqvobufxwurgrsphhnq.supabase.co/functions/v1/confirmed",
+]
 jwt_expiry = 3600
 enable_signup = true
 
@@ -31,9 +37,21 @@ enable_signup = true
 enable_signup = true
 double_confirm_changes = true
 # Confirmation d'e-mail OBLIGATOIRE : un compte ne débloque l'illimité
-# qu'après vérification (code à 6 chiffres saisi dans l'extension). À activer
-# aussi en prod : dashboard → Auth → Providers → Email → Confirm email.
+# qu'après vérification (lien cliqué OU code à 6 chiffres saisi dans
+# l'extension). À activer aussi en prod : dashboard → Auth → Providers →
+# Email → Confirm email.
 enable_confirmations = true
+
+# Template de l'e-mail de confirmation (design EMPIR) : bouton
+# {{ .ConfirmationURL }} + code {{ .Token }} en secours. En prod, poussé via
+# l'API de management (cf. scripts/push-email-template.mjs).
+[auth.email.template.confirmation]
+subject = "Confirmez votre compte EMPIR Copilot"
+content_path = "./supabase/templates/confirmation.html"
+
+# Page d'atterrissage publique du lien de confirmation (pas de JWT).
+[functions.confirmed]
+verify_jwt = false
 
 [auth.external.google]
 enabled = true
