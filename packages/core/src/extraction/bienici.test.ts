@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { parseBienici } from "./bienici";
+import { parseBienici } from "./bienici.ts";
 
 const html = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "__fixtures__/bienici-immo-facile-57473578.html"),

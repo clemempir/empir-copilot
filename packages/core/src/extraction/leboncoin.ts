@@ -1,5 +1,5 @@
-import type { Listing, ListingGeo, PropertyType } from "../types";
-import { extractDpeDate, extractGesKgM2, extractKwhM2, toNumber, toPropertyType } from "./mapping";
+import type { Listing, ListingGeo, PropertyType } from "../types.ts";
+import { extractDpeDate, extractGesKgM2, extractKwhM2, toNumber, toPropertyType } from "./mapping.ts";
 
 /**
  * Mappe le couple (coordonnées, type de localisation Leboncoin) vers un

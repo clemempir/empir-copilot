@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectSite, isListingPage } from "./sites";
+import { detectSite, isListingPage } from "./sites.ts";
 
 describe("detectSite", () => {
   const cases: [string, ReturnType<typeof detectSite>][] = [

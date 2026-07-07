@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { estimateAcquisitionCost } from "./acquisition";
-import type { Listing } from "../types";
+import { estimateAcquisitionCost } from "./acquisition.ts";
+import type { Listing } from "../types.ts";
 
 const baseListing: Listing = {
   url: "https://www.leboncoin.fr/ad/ventes_immobilieres/1",

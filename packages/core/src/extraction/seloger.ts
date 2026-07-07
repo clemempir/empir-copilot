@@ -1,4 +1,4 @@
-import type { Listing, ListingGeo } from "../types";
+import type { Listing, ListingGeo } from "../types.ts";
 import {
   buildRawAddress,
   extractDpeDate,
@@ -9,7 +9,7 @@ import {
   toNumber,
   toPropertyType,
   toStr,
-} from "./mapping";
+} from "./mapping.ts";
 
 const UNKNOWN = "seloger: structure inconnue";
 

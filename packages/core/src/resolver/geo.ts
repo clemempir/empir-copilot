@@ -1,4 +1,4 @@
-import type { GeoHint } from "./types";
+import type { GeoHint } from "./types.ts";
 
 /**
  * Distance approchée en mètres (équirectangulaire — suffisant à l'échelle d'une

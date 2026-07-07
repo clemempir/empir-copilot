@@ -151,5 +151,5 @@ export interface Report {
   listing: Listing;
   quick: QuickAnalysis;
   enrichments?: Enrichments;
-  resolvedAddress?: import("./resolver/types").ResolvedAddress;
+  resolvedAddress?: import("./resolver/types.ts").ResolvedAddress;
 }

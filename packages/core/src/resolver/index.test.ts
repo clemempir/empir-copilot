@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { resolveAddress } from "./index";
+import { resolveAddress } from "./index.ts";
 
 const ADEME_HOST = "data.ademe.fr";
 const APICARTO_HOST = "apicarto.ign.fr";

@@ -1,5 +1,5 @@
-import type { AdemeCertificate } from "./ademe";
-import type { MatchBreakdownItem, MatchFactor, ResolverInput } from "./types";
+import type { AdemeCertificate } from "./ademe.ts";
+import type { MatchBreakdownItem, MatchFactor, ResolverInput } from "./types.ts";
 
 /**
  * SCORING — « croisements multiplicatifs × sélectivité locale » (façon parcellai.re,

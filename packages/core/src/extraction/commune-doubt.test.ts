@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectCommuneDoubt } from "./commune-doubt";
+import { detectCommuneDoubt } from "./commune-doubt.ts";
 
 // Phrases RÉELLES issues des annonces revues en console le 2026-07-03 —
 // l'agent classe l'annonce à Mont-de-Marsan, la description avoue le village.

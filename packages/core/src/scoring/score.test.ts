@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildQuickAnalysis } from "./score";
-import type { Listing, MarketStats } from "../types";
+import { buildQuickAnalysis } from "./score.ts";
+import type { Listing, MarketStats } from "../types.ts";
 
 const listing = {
   price: 289_000,

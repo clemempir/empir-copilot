@@ -1,5 +1,5 @@
-import { stripAccentsLower } from "../extraction/mapping";
-import type { DvfSale, PropertyType, Comparable, MarketStats } from "../types";
+import { stripAccentsLower } from "../extraction/mapping.ts";
+import type { DvfSale, PropertyType, Comparable, MarketStats } from "../types.ts";
 
 function isHousingType(t: string | undefined): t is PropertyType {
   return t === "Appartement" || t === "Maison";

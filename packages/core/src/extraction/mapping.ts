@@ -1,4 +1,4 @@
-import type { ListingGeo, PropertyType } from "../types";
+import type { ListingGeo, PropertyType } from "../types.ts";
 
 /** Coerce an unknown value to a finite positive number (parses strings like "289 000 €"). */
 export function toNumber(value: unknown): number | undefined {

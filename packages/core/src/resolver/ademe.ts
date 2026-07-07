@@ -1,4 +1,4 @@
-import { fixMojibake } from "../extraction/mapping";
+import { fixMojibake } from "../extraction/mapping.ts";
 
 /**
  * Wrapper sur la base DPE ADEME publique (Data Fair API).
@@ -68,8 +68,18 @@ export interface FetchAdemeOptions {
   fetchFn?: typeof fetch;
 }
 
-const ADEME_BASE =
-  "https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant/lines";
+/**
+ * Jeux de données ADEME interrogés, dans l'ordre : le millésime enrichi
+ * (meg-…) d'abord, le dataset historique `dpe03existant` en secours si le
+ * premier répond en erreur. (Comportement historique de la prod, porté ici
+ * lors de la déduplication core/edge.)
+ */
+const ADEME_DATASET_IDS = ["meg-83tjwtg8dyz4vv7h1dqe", "dpe03existant"] as const;
+
+const ADEME_HEADERS = {
+  "user-agent": "empir-copilot/0.1 (+https://empir-copilot.fr)",
+  accept: "application/json",
+};
 
 interface AdemeRow {
   numero_dpe?: string;
@@ -159,39 +169,49 @@ export async function fetchAdemeCertificates(
   // certs) dépasse largement 1000 ; tronquer écarte le bon certificat du gate.
   const limit = Math.min(opts.limit ?? 10_000, 10_000);
 
-  const url = new URL(ADEME_BASE);
-  url.searchParams.set("size", String(limit));
-  url.searchParams.set("code_postal_ban_eq", opts.postalCode);
-  // NB : on ne filtre plus par `type_batiment`. Un appartement en copropriété
-  // peut n'avoir qu'un DPE de type `immeuble` (ou un lot), que ce filtre
-  // excluait avant même le scoring. Le type est départagé par le scorer.
-  url.searchParams.set(
-    "select",
-    [
-      "numero_dpe",
-      "adresse_ban",
-      "code_postal_ban",
-      "nom_commune_ban",
-      "_geopoint",
-      "surface_habitable_logement",
-      "surface_habitable_immeuble",
-      "nombre_appartement",
-      "type_batiment",
-      "etiquette_dpe",
-      "conso_5_usages_par_m2_ep",
-      "emission_ges_5_usages_par_m2",
-      "etiquette_ges",
-      "annee_construction",
-      "date_etablissement_dpe",
-      "date_visite_diagnostiqueur",
-      "identifiant_ban",
-      "statut_geocodage",
-      "score_ban",
-    ].join(","),
-  );
-
-  const res = await fetchFn(url.toString());
-  if (!res.ok) throw new Error(`ADEME DPE: HTTP ${res.status}`);
+  let res: Response | null = null;
+  let lastStatus = 0;
+  let lastUrl = "";
+  for (const dataset of ADEME_DATASET_IDS) {
+    const url = new URL(`https://data.ademe.fr/data-fair/api/v1/datasets/${dataset}/lines`);
+    url.searchParams.set("size", String(limit));
+    url.searchParams.set("code_postal_ban_eq", opts.postalCode);
+    // NB : on ne filtre plus par `type_batiment`. Un appartement en copropriété
+    // peut n'avoir qu'un DPE de type `immeuble` (ou un lot), que ce filtre
+    // excluait avant même le scoring. Le type est départagé par le scorer.
+    url.searchParams.set(
+      "select",
+      [
+        "numero_dpe",
+        "adresse_ban",
+        "code_postal_ban",
+        "nom_commune_ban",
+        "_geopoint",
+        "surface_habitable_logement",
+        "surface_habitable_immeuble",
+        "nombre_appartement",
+        "type_batiment",
+        "etiquette_dpe",
+        "conso_5_usages_par_m2_ep",
+        "emission_ges_5_usages_par_m2",
+        "etiquette_ges",
+        "annee_construction",
+        "date_etablissement_dpe",
+        "date_visite_diagnostiqueur",
+        "identifiant_ban",
+        "statut_geocodage",
+        "score_ban",
+      ].join(","),
+    );
+    lastUrl = url.toString();
+    const r = await fetchFn(lastUrl, { headers: ADEME_HEADERS });
+    if (r.ok) {
+      res = r;
+      break;
+    }
+    lastStatus = r.status;
+  }
+  if (!res) throw new Error(`ADEME ${lastStatus} for ${lastUrl}`);
   const json = (await res.json()) as { results?: AdemeRow[]; total?: number };
   const rows = json.results ?? [];
 

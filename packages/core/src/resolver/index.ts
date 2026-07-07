@@ -1,16 +1,16 @@
-import { fetchAdemeCertificates, type AdemeCertificate } from "./ademe";
-import { lookupParcel } from "./cadastre";
-import { distanceM, geoDiskCoef, isPreciseMarker } from "./geo";
-import { computeSelectivities, scoreCertificate, type ScoredCertificate } from "./scorer";
+import { fetchAdemeCertificates, type AdemeCertificate } from "./ademe.ts";
+import { lookupParcel } from "./cadastre.ts";
+import { distanceM, geoDiskCoef, isPreciseMarker } from "./geo.ts";
+import { computeSelectivities, scoreCertificate, type ScoredCertificate } from "./scorer.ts";
 import type {
   MatchBreakdownItem,
   ResolveFlag,
   ResolvedAddress,
   ResolveStatus,
   ResolverInput,
-} from "./types";
+} from "./types.ts";
 
-export type { ResolverInput, ResolvedAddress, MatchBreakdownItem } from "./types";
+export type { ResolverInput, ResolvedAddress, MatchBreakdownItem } from "./types.ts";
 
 export interface ResolveAddressOptions {
   /** Nombre maximum de candidats retournés (défaut 5). */
@@ -19,7 +19,28 @@ export interface ResolveAddressOptions {
   withCadastre?: boolean;
   /** Injection fetch (tests). */
   fetchFn?: typeof fetch;
+  /** Reçoit les compteurs de diagnostic (affichés par le sidepanel en dev). */
+  onDebug?: (debug: ResolveDebug) => void;
 }
+
+/**
+ * Compteurs de diagnostic de la résolution. Noms historiques conservés pour
+ * le sidepanel : `keptAfterSurfaceFilter` = taille du vivier APRÈS le gate
+ * géo (il n'existe pas de filtre surface), `usedLandSurfacePass` = un
+ * marqueur précis a servi de gate (pas de « passe terrain »).
+ */
+export interface ResolveDebug {
+  ademeTotal: number;
+  keptAfterSurfaceFilter: number;
+  usedLandSurfacePass: boolean;
+}
+
+/**
+ * Version de l'algorithme — UTILISÉE DANS LA CLÉ DE CACHE de la fonction
+ * `resolve-address` : à bumper dans le MÊME commit que tout changement de
+ * comportement du résolveur, sinon la prod servira des résolutions figées.
+ */
+export const RESOLVER_VERSION = "v22-source-unique";
 
 // ── Constantes paramétrables (calibration future) ──────────────────────────
 
@@ -94,7 +115,8 @@ const W_MARGIN = 0.55;
  *      + DPE contradictoire ⇒ conflit, jamais auto-résolu.
  *   6. Cadastre pour le top-1.
  *
- * ⚠️ Réplique manuelle dans `supabase/functions/resolve-address/index.ts`.
+ * SOURCE UNIQUE : la fonction `resolve-address` (Supabase) importe ce module
+ * directement — plus aucune réplique à synchroniser.
  */
 export async function resolveAddress(
   rawInput: ResolverInput,
@@ -105,7 +127,10 @@ export async function resolveAddress(
   const withCadastre = opts.withCadastre ?? true;
   let input = sanitizeInput(rawInput);
 
-  if (!input.postalCode) return [];
+  if (!input.postalCode) {
+    opts.onDebug?.({ ademeTotal: 0, keptAfterSurfaceFilter: 0, usedLandSurfacePass: false });
+    return [];
+  }
 
   // ── 1bis. Détecteur « marqueur centré agence » ───────────────────────────
   // Certains portails épinglent la carte sur l'ADRESSE DE L'AGENCE, pas sur le
@@ -128,7 +153,10 @@ export async function resolveAddress(
   }
 
   const certs = await fetchAdemeCertificates({ postalCode: input.postalCode, fetchFn });
-  if (!certs.length) return [];
+  if (!certs.length) {
+    opts.onDebug?.({ ademeTotal: 0, keptAfterSurfaceFilter: 0, usedLandSurfacePass: false });
+    return [];
+  }
 
   // ── 2. Gate spatial ──────────────────────────────────────────────────────
   const dist = new Map<AdemeCertificate, number>();
@@ -149,6 +177,12 @@ export async function resolveAddress(
     const gated = certs.filter((c) => (dist.get(c) ?? Infinity) <= gateR);
     if (gated.length) pool = gated; // sinon : marqueur inutilisable, on garde tout
   }
+
+  opts.onDebug?.({
+    ademeTotal: certs.length,
+    keptAfterSurfaceFilter: pool.length,
+    usedLandSurfacePass: input.geo != null && precise,
+  });
 
   // ── 3. Scoring (combos × sélectivité, + coef géo-disque) ─────────────────
   const selectivities = computeSelectivities(input, pool);

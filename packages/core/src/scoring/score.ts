@@ -1,4 +1,4 @@
-import type { Listing, MarketStats, QuickAnalysis } from "../types";
+import type { Listing, MarketStats, QuickAnalysis } from "../types.ts";
 
 export function scoreLabel(score: number): string {
   if (score >= 80) return "Très bon";

@@ -1,4 +1,4 @@
-import type { TaxeFonciereInfo } from "../types";
+import type { TaxeFonciereInfo } from "../types.ts";
 
 const API_BASE =
   "https://data.economie.gouv.fr/api/explore/v2.1/catalog/datasets/fiscalite-locale-des-particuliers-geo/records";

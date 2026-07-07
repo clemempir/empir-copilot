@@ -10,8 +10,8 @@ import {
   DVF_YEARS,
   propertySaleHistory,
   buildSaleTimeline,
-} from "./dvf";
-import type { DvfSale } from "../types";
+} from "./dvf.ts";
+import type { DvfSale } from "../types.ts";
 
 const csv = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "fixtures/dvf-sample.csv"),
@@ -101,7 +101,7 @@ describe("haversineM", () => {
   });
 });
 
-function fakeSale(over: Partial<import("../types").DvfSale>): import("../types").DvfSale {
+function fakeSale(over: Partial<import("../types.ts").DvfSale>): import("../types.ts").DvfSale {
   return {
     idMutation: Math.random().toString(36).slice(2),
     date: "2024-06-01",

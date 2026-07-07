@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { AdemeCertificate } from "./ademe";
-import { computeSelectivities, scoreCertificate } from "./scorer";
-import type { ResolverInput } from "./types";
+import type { AdemeCertificate } from "./ademe.ts";
+import { computeSelectivities, scoreCertificate } from "./scorer.ts";
+import type { ResolverInput } from "./types.ts";
 
 function cert(p: Partial<AdemeCertificate>): AdemeCertificate {
   return {

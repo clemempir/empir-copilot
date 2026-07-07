@@ -1,4 +1,4 @@
-import type { Listing } from "../types";
+import type { Listing } from "../types.ts";
 import {
   buildRawAddress,
   extractDpeDate,
@@ -8,7 +8,7 @@ import {
   toNumber,
   toPropertyType,
   toStr,
-} from "./mapping";
+} from "./mapping.ts";
 
 const UNKNOWN = "citya: structure inconnue";
 

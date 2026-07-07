@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { fetchPluZone, explainPluZone } from "./plu";
+import { fetchPluZone, explainPluZone } from "./plu.ts";
 
 // ─── Fixtures recorded from real API responses (2026-06-11) ───────────────────
 // GET https://apicarto.ign.fr/api/gpu/zone-urba?geom=<Point [lon,lat]>

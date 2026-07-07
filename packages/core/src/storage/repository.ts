@@ -1,4 +1,4 @@
-import type { Listing, Report } from "../types";
+import type { Listing, Report } from "../types.ts";
 
 export interface CacheEntry<T> {
   value: T;

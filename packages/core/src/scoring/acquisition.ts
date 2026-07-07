@@ -1,4 +1,4 @@
-import type { Listing } from "../types";
+import type { Listing } from "../types.ts";
 
 export interface AcquisitionCost {
   /** Prix affiché (FAI, agence incluse pour LBC) */

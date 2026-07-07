@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { fetchTaxeFonciere } from "./taxe-fonciere";
+import { fetchTaxeFonciere } from "./taxe-fonciere.ts";
 
 // ─── Fixtures recorded from real API responses (2026-06-11) ───────────────────
 

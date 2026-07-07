@@ -1,4 +1,4 @@
-import type { CommuneInfo } from "../types";
+import type { CommuneInfo } from "../types.ts";
 
 const API_BASE = "https://geo.api.gouv.fr/communes";
 

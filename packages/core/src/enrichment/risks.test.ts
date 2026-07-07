@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { fetchRisks } from "./risks";
+import { fetchRisks } from "./risks.ts";
 
 // ─── Fixtures recorded from real API responses ───────────────────────────────
 

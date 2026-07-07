@@ -1,4 +1,4 @@
-import type { PluZone } from "../types";
+import type { PluZone } from "../types.ts";
 
 const API_BASE = "https://apicarto.ign.fr/api/gpu/zone-urba";
 

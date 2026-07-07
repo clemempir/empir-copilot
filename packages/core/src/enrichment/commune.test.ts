@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { citycodeFromLatLon, fetchCommuneInfo } from "./commune";
+import { citycodeFromLatLon, fetchCommuneInfo } from "./commune.ts";
 
 // ─── Fixture recorded from real API response (2026-06-11) ─────────────────────
 

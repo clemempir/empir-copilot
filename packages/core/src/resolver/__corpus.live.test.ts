@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { resolveAddress } from "./index";
-import { CASES } from "./__corpus.cases";
+import { resolveAddress } from "./index.ts";
+import { CASES } from "./__corpus.cases.ts";
 
 /**
  * CORPUS DE RÉGRESSION — vraies annonces analysées, rejouées contre l'ADEME LIVE.

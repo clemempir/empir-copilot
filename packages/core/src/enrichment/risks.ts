@@ -1,4 +1,4 @@
-import type { RiskItem, RiskReport } from "../types";
+import type { RiskItem, RiskReport } from "../types.ts";
 
 const API_BASE = "https://www.georisques.gouv.fr/api/v1/resultats_rapport_risque";
 

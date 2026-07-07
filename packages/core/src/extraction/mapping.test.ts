@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractDpeDate, extractGesKgM2, fixMojibake } from "./mapping";
+import { extractDpeDate, extractGesKgM2, fixMojibake } from "./mapping.ts";
 
 describe("extractDpeDate — formulations réelles", () => {
   it("Bien'ici : « Date de réalisation du DPE : 21 avril 2026 » (ignore le piège « 1er juillet 2021 »)", () => {

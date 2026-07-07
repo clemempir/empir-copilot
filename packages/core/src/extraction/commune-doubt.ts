@@ -1,4 +1,4 @@
-import { stripAccentsLower } from "./mapping";
+import { stripAccentsLower } from "./mapping.ts";
 
 /**
  * Doute sur la commune déclarée d'une annonce.

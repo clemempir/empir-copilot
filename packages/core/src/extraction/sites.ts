@@ -1,7 +1,7 @@
-import type { Site } from "../types";
-import { isLeboncoinListingPage } from "./leboncoin";
-import { isSelogerListingPage } from "./seloger";
-import { isCityaListingPage } from "./citya";
+import type { Site } from "../types.ts";
+import { isLeboncoinListingPage } from "./leboncoin.ts";
+import { isSelogerListingPage } from "./seloger.ts";
+import { isCityaListingPage } from "./citya.ts";
 
 /**
  * Registry of supported sites. Each entry knows how to recognise its domain

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { GeoPoint } from "../types";
-import { correctedLocation, geocode } from "./geocode";
+import type { GeoPoint } from "../types.ts";
+import { correctedLocation, geocode } from "./geocode.ts";
 
 const banResponse = {
   type: "FeatureCollection",

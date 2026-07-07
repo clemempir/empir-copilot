@@ -1,4 +1,4 @@
-import type { GeoPoint, ListingLocation } from "../types";
+import type { GeoPoint, ListingLocation } from "../types.ts";
 
 export interface GeocodeOptions {
   fetchFn?: typeof fetch;

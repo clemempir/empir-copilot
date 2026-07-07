@@ -1,4 +1,4 @@
-import type { ResolverInput, ResolveStatus, ResolveFlag } from "./types";
+import type { ResolverInput, ResolveStatus, ResolveFlag } from "./types.ts";
 
 /**
  * CORPUS DE RÉGRESSION — vraies annonces analysées (données seules).
