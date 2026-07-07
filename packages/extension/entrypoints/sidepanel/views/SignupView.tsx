@@ -164,19 +164,23 @@ export function SignupView({
         </span>
       </header>
 
-      {/* Contenu centré verticalement dans l'espace restant ; si le panneau
-          est trop court pour le formulaire, on retombe sur un défilement. */}
+      {/* Défilement de secours si le panneau est trop court pour le formulaire. */}
       <div className="empir-scroll flex-1 overflow-y-auto">
-        {/* pb > pt : compense la hauteur de l'en-tête pour un centrage optique
-            sur la page entière (même principe que l'accueil). */}
-        <div className="flex min-h-full flex-col items-center justify-center px-6 pt-8 pb-20">
+        {/* Ancrage FIXE depuis le haut (pas de centrage dynamique) : les modes
+            n'ont pas la même hauteur, seul un point de départ commun garantit
+            que titre, champs et CTA ne bougent pas au basculement. */}
+        <div className="flex min-h-full flex-col items-center justify-start px-6 pb-8 pt-16">
         {mode === "confirm" && (
           <MailCheck className="mb-5 size-10 text-empir-accent" strokeWidth={1.5} />
         )}
         <h1 className="text-center text-[18px] font-semibold leading-tight text-empir-text">
           {title}
         </h1>
-        <p className="mt-2 max-w-[280px] text-center text-[12px] text-empir-muted">{sub}</p>
+        {/* min-h = 2 lignes : égalise les sous-titres pour que les champs et
+            le CTA restent au même endroit entre création et connexion. */}
+        <p className="mt-2 min-h-[36px] max-w-[280px] text-center text-[12px] text-empir-muted">
+          {sub}
+        </p>
 
         {(mode === "signup" || mode === "login") && (
           <>
