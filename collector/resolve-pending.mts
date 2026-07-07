@@ -15,22 +15,12 @@
 import { execSync } from "node:child_process";
 import { resolveAddress, type ResolverInput } from "../packages/core/src/resolver/index.ts";
 import { detectCommuneDoubt } from "../packages/core/src/extraction/commune-doubt.ts";
+import { postalCodeOfCity } from "../packages/core/src/enrichment/commune.ts";
+// @ts-expect-error module JS partagé sans déclarations de types
+import { sb, sleep, toResolverInput, toCandidateRow } from "./_shared.mjs";
 
-const SUPABASE_URL = env("SUPABASE_URL");
-const SERVICE_KEY = env("SUPABASE_SERVICE_KEY");
 const REPLAY = process.argv.includes("--replay");
 const DELAY_MS = 400; // politesse ADEME/BAN entre deux cas
-
-function env(k: string): string {
-  const v = process.env[k];
-  if (!v) {
-    console.error(`✗ variable d'env manquante: ${k}`);
-    process.exit(1);
-  }
-  return v;
-}
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function gitSha(): string {
   try {
@@ -40,21 +30,7 @@ function gitSha(): string {
   }
 }
 
-async function sb(path: string, opts: RequestInit = {}): Promise<Response> {
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    ...opts,
-    headers: {
-      apikey: SERVICE_KEY,
-      authorization: `Bearer ${SERVICE_KEY}`,
-      "content-type": "application/json",
-      ...(opts.headers ?? {}),
-    },
-  });
-  if (!r.ok) throw new Error(`Supabase ${r.status}: ${await r.text()}`);
-  return r;
-}
-
-// ── Mapping dossier de cas → ResolverInput ──────────────────────────────────
+// ── Mapping dossier de cas → ResolverInput (partagé, cf. _shared.mjs) ────────
 
 interface Extracted {
   description?: string | null;
@@ -73,53 +49,8 @@ interface Extracted {
   marker?: { lat?: number; lon?: number; radiusM?: number; precise?: boolean } | null;
 }
 
-const TYPE_MAP: Record<string, ResolverInput["propertyType"]> = {
-  maison: "Maison",
-  appartement: "Appartement",
-  immeuble: "Immeuble",
-};
-
 function toInput(x: Extracted): ResolverInput | null {
-  if (!x.postalCode) return null;
-  const geo =
-    x.marker?.lat != null && x.marker?.lon != null
-      ? {
-          lat: x.marker.lat,
-          lon: x.marker.lon,
-          radiusM: x.marker.radiusM,
-          precise: x.marker.precise === true,
-        }
-      : undefined;
-  return {
-    postalCode: x.postalCode,
-    city: x.city ?? undefined,
-    surface: x.surface ?? undefined,
-    rooms: x.rooms ?? undefined,
-    landSurface: x.landSurface ?? undefined,
-    yearBuilt: x.year ?? undefined,
-    dpeClass: (x.dpeClass as ResolverInput["dpeClass"]) ?? undefined,
-    dpeKwhM2: x.dpeKwh ?? undefined,
-    gesClass: (x.gesClass as ResolverInput["gesClass"]) ?? undefined,
-    gesKgCO2M2: x.gesVal ?? undefined,
-    dpeDate: x.dpeDate ?? undefined,
-    propertyType: x.propertyType ? TYPE_MAP[x.propertyType] : undefined,
-    geo,
-  };
-}
-
-/** Code postal d'une commune nommée (même département que la commune déclarée). */
-async function postalCodeOf(city: string, declaredPostal: string): Promise<string | null> {
-  try {
-    const dept = declaredPostal.slice(0, 2);
-    const r = await fetch(
-      `https://geo.api.gouv.fr/communes?nom=${encodeURIComponent(city)}&codeDepartement=${dept}&fields=nom,codesPostaux&boost=population&limit=1`,
-    );
-    if (!r.ok) return null;
-    const rows = (await r.json()) as { nom?: string; codesPostaux?: string[] }[];
-    return rows[0]?.codesPostaux?.[0] ?? null;
-  } catch {
-    return null;
-  }
+  return toResolverInput(x) as ResolverInput | null;
 }
 
 // ── Boucle principale ────────────────────────────────────────────────────────
@@ -146,7 +77,7 @@ async function run(): Promise<void> {
         const doubt = detectCommuneDoubt(row.extracted.description ?? undefined, row.extracted.city ?? undefined);
         if (doubt?.city) {
           // Commune nommée → on résout dans la BONNE commune.
-          const cp = doubt.postalCode ?? (await postalCodeOf(doubt.city, input.postalCode));
+          const cp = doubt.postalCode ?? (await postalCodeOfCity(doubt.city, input.postalCode));
           if (cp) {
             input.postalCode = cp;
             input.city = doubt.city;
@@ -177,12 +108,7 @@ async function run(): Promise<void> {
                 resolvedInCity: doubt?.city ? input.city : undefined,
               }
             : { address: null, confidence: 0, status: "unresolved", communeDoubt: doubt ?? undefined },
-          candidates: candidates.map((c) => ({
-            address: c.address,
-            confidence: c.confidence,
-            numero_dpe: c.ademeCertId,
-            dist_m: c.distanceM ?? null,
-          })),
+          candidates: candidates.map(toCandidateRow),
           score_breakdown: top?.matchBreakdown ?? [],
           status: top?.status ?? "unresolved",
           error: null,
@@ -198,8 +124,11 @@ async function run(): Promise<void> {
     });
     const st = String(patch.status);
     counts[st] = (counts[st] ?? 0) + 1;
-    console.log(`  [${i + 1}/${rows.length}] ${row.id} → ${st}${(patch as { resolved?: { address?: string } }).resolved?.address ? ` · ${(patch as { resolved: { address: string } }).resolved.address}` : ""}`);
-    await sleep(DELAY_MS);
+    const addr = (patch.resolved as { address?: string } | undefined)?.address;
+    console.log(`  [${i + 1}/${rows.length}] ${row.id} → ${st}${addr ? ` · ${addr}` : ""}`);
+    // Politesse ADEME/BAN : uniquement après un cas qui a réellement appelé le
+    // résolveur, et pas après le dernier.
+    if (input && i < rows.length - 1) await sleep(DELAY_MS);
   }
 
   console.log(`\n✓ Terminé — ${Object.entries(counts).map(([k, v]) => `${k}: ${v}`).join(" · ") || "rien à faire"}`);

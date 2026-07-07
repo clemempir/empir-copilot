@@ -13,7 +13,7 @@
  *
  * Renvoie : { candidates: ResolvedAddress[], usage, debug }
  */
-import { handleCorsPreflight, corsHeaders } from "../_shared/cors.ts";
+import { handleCorsPreflight, corsHeaders, jsonResponse as json } from "../_shared/cors.ts";
 import { serviceClient } from "../_shared/supabase.ts";
 
 type DpeLetter = "A" | "B" | "C" | "D" | "E" | "F" | "G";
@@ -189,7 +189,7 @@ function buildCacheKey(input: ResolverInput): string {
     : "_";
   return [
     // Version d'algo : bumper à chaque changement de logique pour invalider le cache.
-    "v20-contradiction-veto",
+    "v21-nettoyage-et-empreinte-ges",
     input.postalCode,
     bucket(input.surface, 2),
     bucket(input.dpeKwhM2, 20),
@@ -558,6 +558,7 @@ const CONSO_EXACT = 0.5;
 const CONSO_GAP = 0.5;
 const FP_SURFACE_TOL = 3;
 const FP_SURFACE_PCT = 0.05; // tolérance relative max(3 m², 5 %) — cf. core index.ts
+const GES_FP_MIN = 15; // empreinte GES : valeur minimale discriminante — cf. core index.ts
 const MARGIN_CONFIRM = 1.5;
 const MARGIN_PROBABLE = 1.2;
 const ACC_K = 3;
@@ -636,7 +637,7 @@ async function resolveAddress(
 
   // Repli « empreinte DPE » (cf. index.ts §5bis) — conso exacte unique.
   if (ranked[0]?.status === "unresolved") {
-    const fp = dpeFingerprintCandidate(input, certs, dist);
+    const fp = energyFingerprintCandidate(input, certs, dist, "conso");
     if (fp) ranked = promoteCandidates([fp], ranked, 5);
   }
 
@@ -644,6 +645,33 @@ async function resolveAddress(
   if (ranked[0]?.status === "unresolved") {
     const df = dpeDateFingerprintCandidate(input, certs, dist);
     if (df) ranked = promoteCandidates([df], ranked, 5);
+  }
+
+  // Repli « empreinte GES » (cf. index.ts §5bis-c) — canal le plus faible,
+  // tenté en dernier, valeur discriminante requise (≥ GES_FP_MIN).
+  if (ranked[0]?.status === "unresolved") {
+    const gf = energyFingerprintCandidate(input, certs, dist, "ges");
+    if (gf) ranked = promoteCandidates([gf], ranked, 5);
+  }
+
+  // Corroboration d'empreinte sur un top « probable » (cf. index.ts §5bis-d) :
+  // même adresse par deux voies indépendantes → confiance de l'empreinte.
+  if (ranked[0]?.status === "probable") {
+    const top = ranked[0];
+    const fp =
+      energyFingerprintCandidate(input, certs, dist, "conso") ??
+      energyFingerprintCandidate(input, certs, dist, "ges");
+    if (
+      fp &&
+      fp.address.trim().toLowerCase() === top.address.trim().toLowerCase() &&
+      fp.confidence > top.confidence
+    ) {
+      ranked[0] = {
+        ...top,
+        confidence: fp.confidence,
+        flags: [...new Set([...(top.flags ?? []), "dpe-fingerprint" as const])],
+      };
+    }
   }
 
   // Repli « lot dans immeuble » (cf. index.ts §5ter) — marqueur PRÉCIS requis.
@@ -772,48 +800,68 @@ function toVerifiedDpe(c: AdemeCert): ResolvedAddress["verifiedDpe"] {
   };
 }
 
-// ── Repli « empreinte DPE » (conso exacte unique, cf. index.ts) ────────────
+// ── Repli « empreinte DPE » (conso OU GES exacts uniques, cf. index.ts) ─────
 
-function dpeFingerprintCandidate(
+function energyFingerprintCandidate(
   input: ResolverInput,
   certs: AdemeCert[],
   dist: Map<AdemeCert, number>,
+  channel: "conso" | "ges",
 ): ResolvedAddress | null {
-  if (input.dpeKwhM2 == null || input.surface == null) return null;
-  const target = input.dpeKwhM2;
+  const target = channel === "conso" ? input.dpeKwhM2 : input.gesKgCO2M2;
+  if (target == null || input.surface == null) return null;
+  // Une petite valeur GES n'identifie rien (cf. GES_FP_MIN).
+  if (channel === "ges" && target < GES_FP_MIN) return null;
+  const valueOf = (c: AdemeCert) => (channel === "conso" ? c.dpeKwhM2 : c.gesKgCO2M2);
   const radius = input.geo ? (input.geo.radiusM ?? DISK_DEFAULT_R) : Infinity;
 
-  const bestByAddr = new Map<string, { cert: AdemeCert; dConso: number }>();
+  const bestByAddr = new Map<string, { cert: AdemeCert; dVal: number }>();
   for (const c of certs) {
-    if (c.dpeKwhM2 == null) continue;
+    const value = valueOf(c);
+    if (value == null) continue;
     if (input.geo) {
       const d = dist.get(c);
       if (d == null || d > radius) continue;
     }
     if (typeCompatible(input, c) === false) continue;
     if (input.dpeClass && c.dpeClass && c.dpeClass !== input.dpeClass) continue;
-    // La conso seule ne fait pas une empreinte : surface ET GES doivent corroborer.
+    // La valeur seule ne fait pas une empreinte : surface ET classes doivent corroborer.
     if (Math.abs(c.surface - input.surface) > Math.max(FP_SURFACE_TOL, input.surface * FP_SURFACE_PCT)) continue;
     if (input.gesClass && c.gesClass && c.gesClass !== input.gesClass) continue;
-    const dConso = Math.abs(c.dpeKwhM2 - target);
+    // Canal GES : la conso ne doit pas CONTREDIRE le certificat (≤ 25 %).
+    if (
+      channel === "ges" &&
+      input.dpeKwhM2 != null &&
+      c.dpeKwhM2 != null &&
+      !within(c.dpeKwhM2, input.dpeKwhM2, COH_CONSO_TOL)
+    ) {
+      continue;
+    }
+    const dVal = Math.abs(value - target);
     const key = addressKey(c);
     const cur = bestByAddr.get(key);
-    if (!cur || dConso < cur.dConso) bestByAddr.set(key, { cert: c, dConso });
+    if (!cur || dVal < cur.dVal) bestByAddr.set(key, { cert: c, dVal });
   }
 
-  const ranked = [...bestByAddr.values()].sort((a, b) => a.dConso - b.dConso);
+  const ranked = [...bestByAddr.values()].sort((a, b) => a.dVal - b.dVal);
   const best = ranked[0];
-  if (!best || best.dConso > CONSO_EXACT) return null;
-  if (ranked[1] && ranked[1].dConso - best.dConso < CONSO_GAP) return null;
+  if (!best || best.dVal > CONSO_EXACT) return null;
+  if (ranked[1] && ranked[1].dVal - best.dVal < CONSO_GAP) return null;
 
   const c = best.cert;
   const d = dist.get(c);
-  // Empreinte (conso exacte + surface ±3 + unicité) = 76 ; corroborations
-  // optionnelles (GES, marqueur géo) renforcent, plafonné à 85 (cf. index.ts).
+  // Empreinte (valeur exacte + surface ±3 + unicité) = 76 ; corroborations
+  // optionnelles (classe de l'autre dimension, marqueur géo) renforcent,
+  // plafonné à 85 (cf. index.ts).
   let fpConf = 76;
-  if (input.gesClass && c.gesClass && c.gesClass === input.gesClass) fpConf += 4;
+  if (channel === "conso") {
+    if (input.gesClass && c.gesClass && c.gesClass === input.gesClass) fpConf += 4;
+  } else if (input.dpeClass && c.dpeClass && c.dpeClass === input.dpeClass) {
+    fpConf += 4;
+  }
   if (input.geo && d != null) fpConf += 3;
   fpConf = Math.min(fpConf, 85);
+  const actual = valueOf(c);
   return {
     address: c.address,
     lat: c.lat ?? 0,
@@ -826,13 +874,18 @@ function dpeFingerprintCandidate(
     flags: ["dpe-fingerprint"],
     matchBreakdown: [
       {
-        criterion: "empreinte-conso",
+        criterion: channel === "conso" ? "empreinte-conso" : "empreinte-ges",
         matched: true,
         similarity: 1,
         expected: target,
-        actual: c.dpeKwhM2,
+        actual,
         factors: [
-          { criterion: "dpeKwhM2", similarity: 1, expected: target, actual: c.dpeKwhM2 },
+          {
+            criterion: channel === "conso" ? "dpeKwhM2" : "gesKgCO2M2",
+            similarity: 1,
+            expected: target,
+            actual,
+          },
           { criterion: "surface", similarity: 1, expected: input.surface, actual: c.surface },
         ],
       },
@@ -1230,6 +1283,51 @@ function asLetter(v: unknown): DpeLetter | undefined {
   return undefined;
 }
 
+// Réplique de core extraction/mapping.ts fixMojibake — répare le double
+// encodage présent dans ~1 % des adresses de la base ADEME (« dâ€™Or » pour
+// « d'Or », « AoÃ»t » pour « Août », parfois avec un octet perdu).
+const CP1252_EXTRA: Record<string, number> = {
+  "€": 0x80, "‚": 0x82, "ƒ": 0x83, "„": 0x84, "…": 0x85,
+  "†": 0x86, "‡": 0x87, "ˆ": 0x88, "‰": 0x89, "Š": 0x8a,
+  "‹": 0x8b, "Œ": 0x8c, "Ž": 0x8e, "‘": 0x91, "’": 0x92,
+  "“": 0x93, "”": 0x94, "•": 0x95, "–": 0x96, "—": 0x97,
+  "˜": 0x98, "™": 0x99, "š": 0x9a, "›": 0x9b, "œ": 0x9c,
+  "ž": 0x9e, "Ÿ": 0x9f,
+};
+const MOJIBAKE_MARKER = /[ÃÂ]|â€/;
+
+function fixMojibake(s: string): string {
+  if (!MOJIBAKE_MARKER.test(s)) return s;
+  let out = s;
+  try {
+    const bytes = new Uint8Array(out.length);
+    let reencodable = true;
+    for (let i = 0; i < out.length; i++) {
+      const code = out.charCodeAt(i);
+      if (code <= 0xff) {
+        bytes[i] = code;
+      } else {
+        const b = CP1252_EXTRA[out[i]!];
+        if (b == null) {
+          reencodable = false;
+          break;
+        }
+        bytes[i] = b;
+      }
+    }
+    if (reencodable) out = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    /* séquences tronquées — réparations ciblées ci-dessous */
+  }
+  return out
+    .replace(/â€™|â€˜/g, "'")
+    .replace(/â€[\s ]/g, "'")
+    .replace(/â€/g, "'")
+    .replace(/[’‘]/g, "'")
+    .replace(/''+/g, "'")
+    .replace(/ /g, " ");
+}
+
 async function fetchAdeme(input: ResolverInput): Promise<AdemeCert[]> {
   let res: Response | null = null;
   let lastStatus = 0;
@@ -1272,7 +1370,9 @@ async function fetchAdeme(input: ResolverInput): Promise<AdemeCert[]> {
     const [lat, lon] = geo;
     out.push({
       certId,
-      address: (r.adresse_ban as string) ?? "",
+      // Réplique de core fixMojibake : ~1 % des adresses ADEME arrivent avec
+      // un double encodage (« dâ€™Or » pour « d'Or »).
+      address: fixMojibake((r.adresse_ban as string) ?? ""),
       lat: Number.isFinite(lat) ? lat : undefined,
       lon: Number.isFinite(lon) ? lon : undefined,
       surface,
@@ -1307,11 +1407,4 @@ async function lookupParcel(lat: number, lon: number): Promise<Parcel | null> {
   } catch {
     return null;
   }
-}
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "content-type": "application/json" },
-  });
 }

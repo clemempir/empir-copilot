@@ -54,6 +54,14 @@ const CONSO_GAP = 0.5;
  */
 const FP_SURFACE_TOL = 3;
 const FP_SURFACE_PCT = 0.05;
+/**
+ * Empreinte GES : valeur minimale discriminante (kg CO₂/m²/an). Mesuré sur le
+ * 40500 : sous ~15 (classes A/B, chauffage électrique), chaque valeur entière
+ * est partagée par ~75 certificats de la commune → aucune sélectivité (2 faux
+ * positifs corpus à GES 6 et 10). Au-dessus, ~10-13 certs/valeur et le test
+ * d'unicité départage (cas Gambetta, GES 36 en double, correctement rejeté).
+ */
+const GES_FP_MIN = 15;
 
 /** Marge top1/top2 pour un statut « confirmed ». */
 const MARGIN_CONFIRM = 1.5;
@@ -160,12 +168,12 @@ export async function resolveAddress(
   // ── 5. Décision ──────────────────────────────────────────────────────────
   let ranked = decide(input, addresses, dist, precise, limit);
 
-  // ── 5bis. Repli « empreinte DPE » ─────────────────────────────────────────
+  // ── 5bis. Repli « empreinte DPE » (conso) ─────────────────────────────────
   // La conso est la vraie valeur du DPE (arrondie à l'entier par SeLoger). Si un
   // SEUL cert matche la conso à la précision d'arrondi (et se détache du 2e),
   // c'est LE certificat de l'annonce — même sans marqueur précis.
   if (ranked[0]?.status === "unresolved") {
-    const fp = dpeFingerprintCandidate(input, certs, dist);
+    const fp = energyFingerprintCandidate(input, certs, dist, "conso");
     if (fp) ranked = promoteCandidates([fp], ranked, limit);
   }
 
@@ -175,6 +183,40 @@ export async function resolveAddress(
   if (ranked[0]?.status === "unresolved") {
     const df = dpeDateFingerprintCandidate(input, certs, dist);
     if (df) ranked = promoteCandidates([df], ranked, limit);
+  }
+
+  // ── 5bis-c. Repli « empreinte GES » ───────────────────────────────────────
+  // Quand la conso annoncée diffère du certificat (annonce ressaisie par
+  // l'agence) mais que le GES colle exactement. Canal le plus faible des trois
+  // (valeurs GES moins dispersées que la conso) → tenté en dernier, et
+  // seulement sur une valeur discriminante (≥ GES_FP_MIN).
+  if (ranked[0]?.status === "unresolved") {
+    const gf = energyFingerprintCandidate(input, certs, dist, "ges");
+    if (gf) ranked = promoteCandidates([gf], ranked, limit);
+  }
+
+  // ── 5bis-d. Corroboration d'empreinte sur un top « probable » ─────────────
+  // Le scoring attributaire a tranché, et une empreinte (conso ou GES exacts,
+  // uniques) désigne LA MÊME adresse : deux voies indépendantes concordent →
+  // la confiance monte au niveau de l'empreinte (cas réel : Leboncoin
+  // 3195763796, probable 78 % + GES 58 exact → 83 %). Une empreinte désignant
+  // une AUTRE adresse ne rétrograde jamais le top (le scoring voit plus large).
+  if (ranked[0]?.status === "probable") {
+    const top = ranked[0];
+    const fp =
+      energyFingerprintCandidate(input, certs, dist, "conso") ??
+      energyFingerprintCandidate(input, certs, dist, "ges");
+    if (
+      fp &&
+      fp.address.trim().toLowerCase() === top.address.trim().toLowerCase() &&
+      fp.confidence > top.confidence
+    ) {
+      ranked[0] = {
+        ...top,
+        confidence: fp.confidence,
+        flags: [...new Set([...(top.flags ?? []), "dpe-fingerprint" as const])],
+      };
+    }
   }
 
   // ── 5ter. Repli « lot dans immeuble » ─────────────────────────────────────
@@ -361,59 +403,85 @@ function toVerifiedDpe(c: AdemeCertificate): ResolvedAddress["verifiedDpe"] {
   };
 }
 
-// ── Repli « empreinte DPE » (conso exacte unique) ──────────────────────────
+// ── Repli « empreinte DPE » (conso OU GES exacts uniques) ───────────────────
 
 /**
- * Empreinte DPE : la conso (kWh) est la vraie valeur du certificat, arrondie à
- * l'entier par l'annonce. Si UN SEUL cert de la commune (type/classe compatibles,
- * surface plausible, dans le rayon géo) matche la conso à la précision d'arrondi
- * (±0.5) ET se détache nettement du 2e, c'est le certificat de l'annonce.
+ * Empreinte DPE : la conso (kWh) — ou à défaut le GES (kg CO₂) — est la vraie
+ * valeur du certificat, arrondie à l'entier par l'annonce. Si UN SEUL cert de
+ * la commune (type/classe compatibles, surface plausible, dans le rayon géo)
+ * matche cette valeur à la précision d'arrondi (±0.5) ET se détache nettement
+ * du 2e, c'est le certificat de l'annonce. Le canal conso est tenté d'abord
+ * (valeurs plus dispersées) ; le canal GES prend le relais quand la conso
+ * annoncée diffère du certificat (annonce ressaisie/arrondie par l'agence —
+ * cas réel : Leboncoin 3195763796, conso 301 vs 292,4 mais GES 58 exact).
  * Retourne ce candidat en « probable » (identité DPE quasi-certaine, mais sans
  * corroboration d'un marqueur précis), sinon `null`.
  */
-function dpeFingerprintCandidate(
+function energyFingerprintCandidate(
   input: ResolverInput,
   certs: AdemeCertificate[],
   dist: Map<AdemeCertificate, number>,
+  channel: "conso" | "ges",
 ): ResolvedAddress | null {
-  if (input.dpeKwhM2 == null || input.surface == null) return null;
-  const target = input.dpeKwhM2;
+  const target = channel === "conso" ? input.dpeKwhM2 : input.gesKgCO2M2;
+  if (target == null || input.surface == null) return null;
+  // Une petite valeur GES n'identifie rien (cf. GES_FP_MIN).
+  if (channel === "ges" && target < GES_FP_MIN) return null;
+  const valueOf = (c: AdemeCertificate) =>
+    channel === "conso" ? c.dpeKwhM2 : c.gesKgCO2M2;
   const radius = input.geo ? (input.geo.radiusM ?? DISK_DEFAULT_R) : Infinity;
 
-  // Meilleur écart conso par ADRESSE (deux DPE d'un même bien ne concurrencent pas).
-  const bestByAddr = new Map<string, { cert: AdemeCertificate; dConso: number }>();
+  // Meilleur écart par ADRESSE (deux DPE d'un même bien ne concurrencent pas).
+  const bestByAddr = new Map<string, { cert: AdemeCertificate; dVal: number }>();
   for (const c of certs) {
-    if (c.dpeKwhM2 == null) continue;
+    const value = valueOf(c);
+    if (value == null) continue;
     if (input.geo) {
       const d = dist.get(c);
       if (d == null || d > radius) continue;
     }
     if (typeCompatible(input, c) === false) continue;
     if (input.dpeClass && c.dpeClass && c.dpeClass !== input.dpeClass) continue;
-    // La conso seule ne fait pas une empreinte : surface ET GES doivent corroborer
-    // (sinon deux logements différents partageant une conso banale se confondent).
+    // La valeur seule ne fait pas une empreinte : surface ET classes doivent
+    // corroborer (sinon deux logements partageant une valeur banale se confondent).
     if (Math.abs(c.surface - input.surface) > Math.max(FP_SURFACE_TOL, input.surface * FP_SURFACE_PCT)) continue;
     if (input.gesClass && c.gesClass && c.gesClass !== input.gesClass) continue;
-    const dConso = Math.abs(c.dpeKwhM2 - target);
+    // Canal GES : la conso ne doit pas CONTREDIRE le certificat (écart ≤ 25 %) —
+    // elle peut différer (ressaisie), mais pas désigner un autre logement.
+    if (
+      channel === "ges" &&
+      input.dpeKwhM2 != null &&
+      c.dpeKwhM2 != null &&
+      !within(c.dpeKwhM2, input.dpeKwhM2, COH_CONSO_TOL)
+    ) {
+      continue;
+    }
+    const dVal = Math.abs(value - target);
     const key = addressKey(c);
     const cur = bestByAddr.get(key);
-    if (!cur || dConso < cur.dConso) bestByAddr.set(key, { cert: c, dConso });
+    if (!cur || dVal < cur.dVal) bestByAddr.set(key, { cert: c, dVal });
   }
 
-  const ranked = [...bestByAddr.values()].sort((a, b) => a.dConso - b.dConso);
+  const ranked = [...bestByAddr.values()].sort((a, b) => a.dVal - b.dVal);
   const best = ranked[0];
-  if (!best || best.dConso > CONSO_EXACT) return null; // pas de match exact
-  if (ranked[1] && ranked[1].dConso - best.dConso < CONSO_GAP) return null; // pas unique
+  if (!best || best.dVal > CONSO_EXACT) return null; // pas de match exact
+  if (ranked[1] && ranked[1].dVal - best.dVal < CONSO_GAP) return null; // pas unique
 
   const c = best.cert;
   const d = dist.get(c);
-  // L'empreinte (conso exacte + surface ±3 + unicité avec écart au 2e) vaut 76 ;
-  // chaque corroboration optionnelle (classe GES concordante, marqueur géo dans
-  // le rayon) renforce, plafonné à 85 (jamais « confirmed » sans marqueur précis).
+  // L'empreinte (valeur exacte + surface ±3 + unicité avec écart au 2e) vaut 76 ;
+  // chaque corroboration optionnelle (classe de l'autre dimension concordante,
+  // marqueur géo dans le rayon) renforce, plafonné à 85 (jamais « confirmed »
+  // sans marqueur précis).
   let fpConf = 76;
-  if (input.gesClass && c.gesClass && c.gesClass === input.gesClass) fpConf += 4;
+  if (channel === "conso") {
+    if (input.gesClass && c.gesClass && c.gesClass === input.gesClass) fpConf += 4;
+  } else if (input.dpeClass && c.dpeClass && c.dpeClass === input.dpeClass) {
+    fpConf += 4;
+  }
   if (input.geo && d != null) fpConf += 3;
   fpConf = Math.min(fpConf, 85);
+  const actual = valueOf(c);
   return {
     address: c.address,
     lat: c.lat ?? 0,
@@ -426,13 +494,18 @@ function dpeFingerprintCandidate(
     flags: ["dpe-fingerprint"],
     matchBreakdown: [
       {
-        criterion: "empreinte-conso",
+        criterion: channel === "conso" ? "empreinte-conso" : "empreinte-ges",
         matched: true,
         similarity: 1,
         expected: target,
-        actual: c.dpeKwhM2,
+        actual,
         factors: [
-          { criterion: "dpeKwhM2", similarity: 1, expected: target, actual: c.dpeKwhM2 },
+          {
+            criterion: channel === "conso" ? "dpeKwhM2" : "gesKgCO2M2",
+            similarity: 1,
+            expected: target,
+            actual,
+          },
           { criterion: "surface", similarity: 1, expected: input.surface, actual: c.surface },
         ],
       },

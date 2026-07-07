@@ -59,7 +59,9 @@ export function extractKwhM2(text: string | undefined): number | undefined {
  */
 export function extractGesKgM2(text: string | undefined): number | undefined {
   if (!text) return undefined;
-  const m = text.match(/(\d[\d\s.,]*)\s*kg(?:[\s./]*(?:eq\.?\s*)?(?:co2|co₂))/i);
+  // « kg » est optionnel : Leboncoin écrit « 58 CO2/m²/an » sans unité (cas
+  // réel 3195763796 — le GES manquant faisait échouer la résolution).
+  const m = text.match(/(\d[\d\s.,]*)\s*(?:kg[\s./]*)?(?:eq\.?\s*)?(?:co2|co₂)/i);
   return m ? toNumber(m[1]) : undefined;
 }
 
@@ -80,6 +82,62 @@ const FRENCH_MONTHS: Record<string, string> = {
 
 export function stripAccentsLower(s: string): string {
   return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+/**
+ * R\u00e9pare le \u00ab mojibake \u00bb pr\u00e9sent dans la base ADEME : des adresses y sont
+ * stock\u00e9es avec un double encodage (UTF-8 relu en Windows-1252), ex.
+ * \u00ab d\u00e2\u20ac\u2122Or \u00bb au lieu de \u00ab d'Or \u00bb, \u00ab Ao\u00c3\u00bbt \u00bb au lieu de \u00ab Ao\u00fbt \u00bb \u2014 parfois
+ * avec un octet perdu (\u00ab d\u00e2\u20ac Or \u00bb). ~1 % des adresses des communes test\u00e9es.
+ * Ne touche pas aux cha\u00eenes saines (garde-fou sur les marqueurs typiques).
+ */
+const CP1252_EXTRA: Record<string, number> = {
+  "\u20ac": 0x80, "\u201a": 0x82, "\u0192": 0x83, "\u201e": 0x84, "\u2026": 0x85,
+  "\u2020": 0x86, "\u2021": 0x87, "\u02c6": 0x88, "\u2030": 0x89, "\u0160": 0x8a,
+  "\u2039": 0x8b, "\u0152": 0x8c, "\u017d": 0x8e, "\u2018": 0x91, "\u2019": 0x92,
+  "\u201c": 0x93, "\u201d": 0x94, "\u2022": 0x95, "\u2013": 0x96, "\u2014": 0x97,
+  "\u02dc": 0x98, "\u2122": 0x99, "\u0161": 0x9a, "\u203a": 0x9b, "\u0153": 0x9c,
+  "\u017e": 0x9e, "\u0178": 0x9f,
+};
+
+// \u00ab \u00c3 \u00bb, \u00ab \u00c2 \u00bb ou \u00ab \u00e2\u20ac \u00bb n'apparaissent jamais dans une adresse fran\u00e7aise
+// saine (sauf \u00ab \u00c2 \u00bb majuscule accentu\u00e9e, ex. CH\u00c2TEAU \u2014 cas g\u00e9r\u00e9 : le
+// re-d\u00e9codage strict \u00e9choue alors et la cha\u00eene reste intacte).
+const MOJIBAKE_MARKER = /[\u00c3\u00c2]|\u00e2\u20ac/;
+
+export function fixMojibake(s: string): string {
+  if (!MOJIBAKE_MARKER.test(s)) return s;
+  let out = s;
+  // 1) R\u00e9-encode en Windows-1252 puis re-d\u00e9code en UTF-8 : r\u00e9pare toutes les
+  //    s\u00e9quences compl\u00e8tes d'un coup. Abandonn\u00e9 si la cha\u00eene m\u00e9lange du texte
+  //    sain et du mojibake (d\u00e9codage strict) \u2192 r\u00e9parations cibl\u00e9es ci-dessous.
+  try {
+    const bytes = new Uint8Array(out.length);
+    let reencodable = true;
+    for (let i = 0; i < out.length; i++) {
+      const code = out.charCodeAt(i);
+      if (code <= 0xff) {
+        bytes[i] = code;
+      } else {
+        const b = CP1252_EXTRA[out[i]!];
+        if (b == null) {
+          reencodable = false;
+          break;
+        }
+        bytes[i] = b;
+      }
+    }
+    if (reencodable) out = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    /* s\u00e9quences tronqu\u00e9es \u2014 on retombe sur les r\u00e9parations cibl\u00e9es */
+  }
+  return out
+    .replace(/\u00e2\u20ac\u2122|\u00e2\u20ac\u02dc/g, "'")
+    .replace(/\u00e2\u20ac[\s\u00a0]/g, "'") // octet final perdu : "d\u00e2\u20ac Or" devient "d'Or"
+    .replace(/\u00e2\u20ac/g, "'")
+    .replace(/[\u2019\u2018]/g, "'") // apostrophe typographique vers simple (forme BAN)
+    .replace(/''+/g, "'")
+    .replace(/\u00a0/g, " ");
 }
 
 const pad2 = (s: string) => s.padStart(2, "0");

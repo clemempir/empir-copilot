@@ -1,3 +1,5 @@
+import { fixMojibake } from "../extraction/mapping";
+
 /**
  * Wrapper sur la base DPE ADEME publique (Data Fair API).
  *
@@ -119,9 +121,11 @@ function normalize(row: AdemeRow): AdemeCertificate | null {
   const { lat, lon } = parseGeopoint(row._geopoint);
   return {
     certId,
-    address: row.adresse_ban ?? "",
+    // ~1 % des adresses ADEME arrivent avec un double encodage (« dâ€™Or »
+    // pour « d'Or ») — réparé à l'ingestion pour tous les consommateurs.
+    address: fixMojibake(row.adresse_ban ?? ""),
     postalCode,
-    city: row.nom_commune_ban ?? "",
+    city: fixMojibake(row.nom_commune_ban ?? ""),
     lat,
     lon,
     surface,
