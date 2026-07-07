@@ -146,7 +146,10 @@ export function SignupView({
   const { title, sub } = TITLES[mode];
 
   return (
-    <div className="flex h-full flex-col bg-empir-bg">
+    // h-screen (et non h-full) : cette vue est rendue hors du conteneur
+    // principal — sans hauteur ancrée sur la fenêtre, le centrage vertical
+    // n'a aucun cadre de référence et tout se tasse en haut.
+    <div className="flex h-screen flex-col bg-empir-bg">
       <header className="flex items-center gap-2 px-4 py-3">
         <button
           type="button"
@@ -161,7 +164,12 @@ export function SignupView({
         </span>
       </header>
 
-      <div className="flex flex-1 flex-col items-center justify-center px-6 pb-10">
+      {/* Contenu centré verticalement dans l'espace restant ; si le panneau
+          est trop court pour le formulaire, on retombe sur un défilement. */}
+      <div className="empir-scroll flex-1 overflow-y-auto">
+        {/* pb > pt : compense la hauteur de l'en-tête pour un centrage optique
+            sur la page entière (même principe que l'accueil). */}
+        <div className="flex min-h-full flex-col items-center justify-center px-6 pt-8 pb-20">
         {mode === "confirm" && (
           <MailCheck className="mb-5 size-10 text-empir-accent" strokeWidth={1.5} />
         )}
@@ -276,6 +284,7 @@ export function SignupView({
             Aucune donnée n'est revendue.
           </p>
         )}
+        </div>
       </div>
     </div>
   );
