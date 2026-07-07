@@ -51,7 +51,8 @@ export function IdleView({ listing, onAnalyze, onAccountClick, hasUnread }: Idle
         </button>
       </header>
 
-      <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+      {/* pb-16 ≈ hauteur de l'en-tête : recentre optiquement sur la page entière. */}
+      <div className="flex flex-1 flex-col items-center justify-center px-6 pb-16 text-center">
         {listing && onAnalyze ? (
           <>
             <div className="flex size-16 items-center justify-center rounded-full bg-empir-primary/15">

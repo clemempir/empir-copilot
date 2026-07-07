@@ -94,11 +94,20 @@ export default function App() {
     };
     browser.tabs.onUpdated.addListener(onUpdated);
 
+    // Filet de sécurité : le background persiste chaque état d'onglet en
+    // session storage. S'y abonner garantit la bascule (« annonce détectée »)
+    // même si le message TAB_STATE_CHANGED se perd pendant une navigation.
+    const onStorage = (changes: Record<string, unknown>, area: string) => {
+      if (area === "session" && "tabStates" in changes) void bindActiveTab();
+    };
+    browser.storage.onChanged.addListener(onStorage);
+
     return () => {
       alive = false;
       browser.runtime.onMessage.removeListener(onMsg);
       browser.tabs.onActivated.removeListener(onActivated);
       browser.tabs.onUpdated.removeListener(onUpdated);
+      browser.storage.onChanged.removeListener(onStorage);
     };
   }, []);
 
