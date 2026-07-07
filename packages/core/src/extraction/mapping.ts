@@ -176,9 +176,14 @@ export function parseFrenchDate(text: string | undefined): string | undefined {
  */
 export function extractDpeDate(text: string | undefined): string | undefined {
   if (!text) return undefined;
+  // Fenêtre 40 : « Date de réalisation du diagnostic énergétique : 26/11/2025 »
+  // (cas réel Leboncoin 3087571354) met 34 caractères entre « réalis » et la
+  // date — 25 la manquait. « diagnostic » couvre les tournures sans « DPE ».
   const near =
     text.match(new RegExp(`dpe[^.]{0,40}?${DATE_TOKEN}`, "i")) ??
-    text.match(new RegExp(`(?:réalis|établi|etabli|effectué|valable)[^.]{0,25}?${DATE_TOKEN}`, "i"));
+    text.match(
+      new RegExp(`(?:diagnostic|réalis|établi|etabli|effectué|valable)[^.]{0,40}?${DATE_TOKEN}`, "i"),
+    );
   return near ? parseFrenchDate(near[1]) : undefined;
 }
 

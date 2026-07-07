@@ -124,6 +124,16 @@ export const CASES: Case[] = [
     },
     expect: { status: "probable", addressIncludes: "Général de Gaulle", flag: "dpe-fingerprint" },
   },
+  {
+    name: "Allée de German — appart 54 D/181 GES A, date 26/11/2025 dans la description (« Date de réalisation du diagnostic énergétique : … », formulation que l'extracteur manquait — fenêtre 25→40 chars), disque ville : résidence retrouvée par la date (Leboncoin 3087571354, 2026-07-07)",
+    input: {
+      postalCode: "40090", city: "Saint-Perdon", surface: 54, rooms: 3,
+      dpeClass: "D", dpeKwhM2: 181, gesClass: "A", dpeDate: "2025-11-26",
+      propertyType: "Appartement",
+      geo: { lat: 43.86399, lon: -0.5927468, radiusM: 2500, precision: "disk" },
+    },
+    expect: { status: "confirmed", addressIncludes: "German" },
+  },
   // ── NÉGATIFS : doivent RESTER unresolved (anti-faux-positif des canaux) ──────
   {
     name: "NÉGATIF Gambetta — T3 66 D/172 GES D/36, disque quartier 1366 m : SIGNATURE BANALE (9 apparts quasi identiques D/165-171 GES 33-36 en ville, dont 2 au GES exact) → indécidable par attributs, abstention correcte. Vraie adresse : 73bis Rue Léon Gambetta, bâtiment LCL (SeLoger 273373421, test extension 2026-07-03)",

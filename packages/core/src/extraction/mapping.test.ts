@@ -15,6 +15,12 @@ describe("extractDpeDate — formulations réelles", () => {
     expect(extractDpeDate("diagnostic réalisé le 2023-06-28")).toBe("2023-06-28");
   });
 
+  it("Leboncoin : « Date de réalisation du diagnostic énergétique : 26/11/2025 » (cas réel 3087571354)", () => {
+    expect(
+      extractDpeDate("Date de réalisation du diagnostic énergétique : 26/11/2025"),
+    ).toBe("2025-11-26");
+  });
+
   it("aucune date exploitable → undefined", () => {
     // « 1er juillet 2021 » ne matche pas DATE_TOKEN (le « 1er » casse `\d{1,2}\s+`)
     // → le seuil de réforme n'est jamais pris pour une vraie date.
