@@ -1,6 +1,14 @@
 import { useCallback, useState } from "react";
+import { browser } from "wxt/browser";
 import type { Listing, ResolvedAddress } from "@empir/core";
 import { getDeviceHash, invokeEdge } from "@/lib/supabase";
+
+/**
+ * Dernière analyse réussie, persistée en session storage : le sidepanel est
+ * DÉCHARGÉ par Chrome quand on change d'onglet (panneau scoped par onglet) —
+ * sans cette mémoire, un aller-retour vers Google Maps effaçait le résultat.
+ */
+const LAST_ANALYSIS_KEY = "empir:last-analysis";
 
 /** Bloc de diagnostic renvoyé par la fonction `analyze` (mode debug). */
 export interface AnalyzeDebug {
@@ -34,6 +42,8 @@ export interface UseAnalyze {
   loading: boolean;
   error: string | null;
   run(listing: Listing): Promise<AnalysisResult | null>;
+  /** Recharge le résultat mémorisé pour cette annonce (retour d'onglet). */
+  restore(listingUrl: string): Promise<boolean>;
   reset(): void;
 }
 
@@ -49,6 +59,11 @@ export function useAnalyze(): UseAnalyze {
       const deviceHash = await getDeviceHash();
       const data = await invokeEdge<AnalysisResult>("analyze", { deviceHash, listing });
       setResult(data);
+      if (data.status === "ok") {
+        void browser.storage.session
+          .set({ [LAST_ANALYSIS_KEY]: { url: listing.url, result: data } })
+          .catch(() => {});
+      }
       return data;
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Erreur inconnue";
@@ -59,11 +74,24 @@ export function useAnalyze(): UseAnalyze {
     }
   }, []);
 
+  const restore = useCallback(async (listingUrl: string) => {
+    const stored = await browser.storage.session
+      .get(LAST_ANALYSIS_KEY)
+      .catch(() => ({}) as Record<string, unknown>);
+    const entry = (stored as Record<string, unknown>)[LAST_ANALYSIS_KEY] as
+      | { url: string; result: AnalysisResult }
+      | undefined;
+    if (entry?.url !== listingUrl || entry.result.status !== "ok") return false;
+    setResult(entry.result);
+    return true;
+  }, []);
+
   return {
     result,
     loading,
     error,
     run,
+    restore,
     reset: () => {
       setResult(null);
       setError(null);

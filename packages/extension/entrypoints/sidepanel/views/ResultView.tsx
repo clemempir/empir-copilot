@@ -129,12 +129,14 @@ export function ResultView({
     manualAddress && resolvedAddress && !sameAddress(resolvedAddress.address, manualAddress)
       ? undefined
       : resolvedAddress;
-  // N'afficher que ce que l'algo ASSUME : un top « unresolved » est un candidat
-  // de travail, pas une adresse — l'afficher en grand tromperait (cas réel :
-  // maison sans DPE → l'adresse d'un voisin s'affichait avec un badge 30 %).
+  // `resolvedOk` = ce que l'algo ASSUME (statut ≠ unresolved) : seules ces
+  // résolutions alimentent les données vérifiées (surface réelle, DPE réel,
+  // cadastre). Un top « unresolved » reste AFFICHÉ comme adresse par défaut
+  // (1er rapprochement) mais avec son badge de fiabilité rouge — l'utilisateur
+  // voit la meilleure piste et peut la corriger ou la valider.
   const resolvedOk = resolved && resolved.status !== "unresolved" ? resolved : undefined;
-  const unresolvedCandidate = !manualAddress && !resolvedOk && !!resolvedAddress;
-  const address = manualAddress ?? resolvedOk?.address ?? listing.location.rawAddress ?? "";
+  const address =
+    manualAddress ?? resolvedOk?.address ?? resolved?.address ?? listing.location.rawAddress ?? "";
   const { line1, line2 } = splitAddress(address);
   // Surface habitable réelle issue du DPE ADEME (colonne « Réel ») — valeur
   // exacte du certificat, à la décimale près (ex. 162,2 m²), pas d'arrondi.
@@ -293,7 +295,7 @@ export function ResultView({
                       </a>
                     )}
                   </div>
-                  {(resolved || manualAddress || canEditAddress || unresolvedCandidate) && (
+                  {(resolved || manualAddress || canEditAddress) && (
                     <div className="mt-[9px] flex flex-wrap items-center gap-[6px]">
                       {manualAddress ? (
                         <span
@@ -302,32 +304,20 @@ export function ResultView({
                         >
                           adresse saisie
                         </span>
-                      ) : resolvedOk ? (
+                      ) : resolved ? (
                         <>
                           <span
                             className="rounded-empir-pill px-[7px] py-[2px] text-[10px] font-bold"
                             style={
-                              resolvedOk.confidence < 60
+                              resolved.confidence < 60
                                 ? { background: "rgba(239,68,68,0.14)", color: "#f87171" }
                                 : { background: "rgba(34,197,94,0.14)", color: "#4ade80" }
                             }
                           >
-                            {Math.round(resolvedOk.confidence)}%
+                            {Math.round(resolved.confidence)}%
                           </span>
                           <span className="text-[8.5px] tracking-[0.02em] text-empir-muted-2">
                             fiabilité localisation
-                          </span>
-                        </>
-                      ) : unresolvedCandidate ? (
-                        <>
-                          <span
-                            className="rounded-empir-pill px-[7px] py-[2px] text-[10px] font-bold"
-                            style={{ background: "rgba(239,68,68,0.14)", color: "#f87171" }}
-                          >
-                            adresse non identifiée
-                          </span>
-                          <span className="text-[8.5px] tracking-[0.02em] text-empir-muted-2">
-                            aucun résultat assez fiable
                           </span>
                         </>
                       ) : null}
@@ -356,8 +346,10 @@ export function ResultView({
 
           {/* Rapprochements d'adresse trouvés par l'algo (liste déroulante) */}
           {!editingAddress && candidateRows.length > 0 && (
+            // pt-4 = padding bas de la carte (16px) : le titre est centré
+            // entre le séparateur et le bord de la carte.
             <div
-              className="mt-[13px] border-t pt-[9px]"
+              className="mt-[13px] border-t pt-4"
               style={{ borderTopColor: "rgba(255,255,255,0.06)" }}
             >
               <button

@@ -70,13 +70,24 @@ async function refreshBadge(): Promise<void> {
 }
 
 export default defineBackground(() => {
-  if (browser.sidePanel && "setPanelBehavior" in browser.sidePanel) {
-    // Clic sur l'icône géré nativement par Chrome (fiable côté gestes).
-    // Le panneau est disponible PARTOUT : hors annonce il sert à consulter
-    // son compte et ses notifications (l'écran d'accueil s'adapte).
-    browser.sidePanel
-      .setPanelBehavior({ openPanelOnActionClick: true })
+  if (browser.sidePanel) {
+    // Panneau ouvrable PARTOUT (compte/notifications hors annonce) mais scoped
+    // PAR ONGLET : un défaut global « enabled » ferait renaître le panneau
+    // dans chaque nouvelle fenêtre (comportement Chrome). Donc désactivé
+    // globalement, et activé+ouvert sur l'onglet courant au clic sur l'icône.
+    (browser.sidePanel as { setOptions?: (o: { enabled: boolean }) => Promise<void> })
+      .setOptions?.({ enabled: false })
       .catch(() => {});
+    browser.action.onClicked.addListener((tab) => {
+      if (tab.id == null) return;
+      const sp = browser.sidePanel as {
+        setOptions?: (o: { tabId: number; path: string; enabled: boolean }) => Promise<void>;
+        open?: (o: { tabId: number }) => Promise<void>;
+      };
+      // Pas d'await entre les deux : open() doit rester dans le geste utilisateur.
+      void sp.setOptions?.({ tabId: tab.id, path: "sidepanel.html", enabled: true }).catch(() => {});
+      void sp.open?.({ tabId: tab.id }).catch(() => {});
+    });
   }
 
   // Pastille de notifications : au réveil du service worker + toutes les 5 min.
@@ -112,7 +123,11 @@ export default defineBackground(() => {
         return;
       }
       if (msg.type === "OPEN_SIDE_PANEL" && tabId !== undefined) {
-        const sp = browser.sidePanel as { open?: (opts: { tabId: number }) => Promise<void> };
+        const sp = browser.sidePanel as {
+          setOptions?: (o: { tabId: number; path: string; enabled: boolean }) => Promise<void>;
+          open?: (opts: { tabId: number }) => Promise<void>;
+        };
+        void sp.setOptions?.({ tabId, path: "sidepanel.html", enabled: true }).catch(() => {});
         await sp.open?.({ tabId }).catch(() => {});
         sendResponse({ ok: true });
         return;
@@ -129,9 +144,18 @@ export default defineBackground(() => {
 
   browser.tabs.onUpdated.addListener(async (tabId, change, tab) => {
     if (change.url && tab.url) {
+      await hydrateTabStates();
       const url = tab.url;
       if (!isListingPage(url) || !detectSite(url)) {
         await setTabState(tabId, { status: "idle" });
+      } else {
+        // Annonce → AUTRE annonce dans le même onglet : purge l'état de la
+        // précédente en attendant la re-détection — sinon, si l'extraction de
+        // la nouvelle échoue, « Lancer l'analyse » relancerait l'ancienne.
+        const cur = ensureTabState(tabId);
+        if (cur.listing && cur.listing.url !== url) {
+          await setTabState(tabId, { status: "idle" });
+        }
       }
     }
   });

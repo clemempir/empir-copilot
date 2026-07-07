@@ -75,6 +75,19 @@ export function parseLeboncoin(doc: Document, url: string): Listing {
   const ad = data?.props?.pageProps?.ad;
   if (!ad) throw new Error("leboncoin: __NEXT_DATA__.props.pageProps.ad introuvable");
 
+  // SPA Le Bon Coin : lors d'une navigation interne (recherche → annonce,
+  // annonce → annonce), __NEXT_DATA__ conserve l'annonce de la PREMIÈRE page
+  // chargée. Si l'id de l'URL contredit l'annonce embarquée, ces données sont
+  // PÉRIMÉES — throw : l'appelant re-télécharge alors le HTML frais (cf.
+  // fallback fetch du content script). Sans ce garde-fou, l'analyse d'une
+  // annonce B ressortait les valeurs de l'annonce A.
+  const urlId = url.match(/\/(\d{6,})(?:[/?#]|$)/)?.[1];
+  const adId = (ad as { list_id?: number | string; id?: number | string }).list_id ??
+    (ad as { id?: number | string }).id;
+  if (urlId && adId != null && String(adId) !== urlId) {
+    throw new Error(`leboncoin: __NEXT_DATA__ périmé (annonce ${adId}, URL ${urlId})`);
+  }
+
   const attributes = (ad.attributes ?? []) as LbcAttribute[];
   const location = (ad.location ?? {}) as Record<string, unknown>;
   const images = (ad.images ?? {}) as { urls?: string[] };

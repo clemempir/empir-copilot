@@ -115,14 +115,25 @@ export default function App() {
 
   // L'analyse ne se lance PLUS automatiquement : l'utilisateur clique
   // « Lancer l'analyse » (il peut ainsi consulter son compte sans consommer
-  // une analyse). Au changement d'annonce, on remet simplement l'état à zéro.
+  // une analyse). L'état n'est remis à zéro que pour une NOUVELLE annonce —
+  // pas quand l'onglet actif devient une page sans annonce (Google Maps…),
+  // sinon un simple aller-retour effaçait le résultat affiché.
   const lastUrlRef = useRef<string | null>(null);
   useEffect(() => {
     const url = tabState.listing?.url ?? null;
-    if (lastUrlRef.current === url) return;
+    if (!url || lastUrlRef.current === url) return;
     lastUrlRef.current = url;
     setCorrectedListing(null); // nouvelle annonce → oublier la correction manuelle
     analyze.reset();
+  }, [tabState.listing, analyze]);
+
+  // Retour sur une annonce déjà analysée (le panneau a été déchargé entre
+  // temps — il est scoped par onglet) : restaure le résultat mémorisé au lieu
+  // de redemander un clic (et une analyse) à l'utilisateur.
+  useEffect(() => {
+    const url = tabState.listing?.url;
+    if (!url || analyze.result || analyze.loading) return;
+    void analyze.restore(url);
   }, [tabState.listing, analyze]);
 
   // L'annonce « effective » : corrigée à la main si l'utilisateur a saisi une

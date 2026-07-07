@@ -64,6 +64,22 @@ describe("parseLeboncoin", () => {
     expect(stable).toMatchSnapshot();
   });
 
+  it("rejette un __NEXT_DATA__ périmé (SPA : l'annonce embarquée ≠ l'URL)", () => {
+    // Navigation interne LBC : la page affiche l'annonce B mais __NEXT_DATA__
+    // contient encore l'annonce A → le parseur DOIT refuser (l'appelant
+    // re-télécharge le HTML frais), sinon B hérite des valeurs de A.
+    const doc = forgeDoc(forgedAd({ list_id: 1111111111 }));
+    expect(() =>
+      parseLeboncoin(doc, "https://www.leboncoin.fr/ad/ventes_immobilieres/2222222222"),
+    ).toThrow(/périmé/);
+    // Même id → OK.
+    const listing = parseLeboncoin(
+      forgeDoc(forgedAd({ list_id: 2222222222 })),
+      "https://www.leboncoin.fr/ad/ventes_immobilieres/2222222222",
+    );
+    expect(listing.surface).toBe(64);
+  });
+
   it("extrait DPE/GES (uppercase) depuis une annonce forgée", () => {
     const listing = parseLeboncoin(
       forgeDoc(forgedAd()),
