@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   Bell,
   BookOpenCheck,
+  ChevronDown,
   ChevronRight,
   HelpCircle,
   LogOut,
@@ -10,6 +11,7 @@ import {
   Settings,
   Trash2,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { frenchAuthError } from "@/lib/hooks/use-auth";
 import {
   EmpirButton,
@@ -73,7 +75,14 @@ export function AccountView({
   onNotificationClick,
   onNavigate,
 }: AccountViewProps) {
-  const unread = notifications.filter((n) => !n.read).length;
+  // Seules les notifications non lues sont affichées : la coche ✓✓ marque
+  // comme lu, donc masque la carte. Une seule visible par défaut, le reste
+  // derrière un dépliant pour ne pas charger l'écran.
+  const unreadNotifs = notifications.filter((n) => !n.read);
+  const unread = unreadNotifs.length;
+  const [showAllNotifs, setShowAllNotifs] = useState(false);
+  const visibleNotifs = showAllNotifs ? unreadNotifs : unreadNotifs.slice(0, 1);
+  const hiddenNotifs = unread - 1;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [editingProfile, setEditingProfile] = useState(false);
@@ -225,21 +234,37 @@ export function AccountView({
             )}
           </header>
           <div className="space-y-2">
-            {notifications.length === 0 && (
+            {unread === 0 && (
               <p className="rounded-empir-card border border-dashed border-empir-line bg-empir-card/50 px-3 py-4 text-center text-[11px] text-empir-muted-2">
                 Aucune notification.
               </p>
             )}
-            {notifications.map((n) => (
+            {visibleNotifs.map((n) => (
               <NotificationCard
                 key={n.id}
                 title={n.title}
                 body={n.body}
                 time={n.time}
-                read={n.read}
                 onClick={() => onNotificationClick?.(n.id)}
               />
             ))}
+            {unread > 1 && (
+              <button
+                type="button"
+                onClick={() => setShowAllNotifs((v) => !v)}
+                className="flex w-full items-center justify-center gap-1.5 rounded-empir-card border border-dashed border-empir-line bg-empir-card/50 px-3 py-2 text-[11px] text-empir-muted transition-colors hover:bg-white/[0.04] hover:text-empir-text"
+              >
+                <ChevronDown
+                  className={cn("size-3.5 transition-transform", showAllNotifs && "rotate-180")}
+                  strokeWidth={1.8}
+                />
+                {showAllNotifs
+                  ? "Réduire"
+                  : hiddenNotifs === 1
+                    ? "Voir 1 autre notification"
+                    : `Voir les ${hiddenNotifs} autres notifications`}
+              </button>
+            )}
           </div>
         </section>
 
