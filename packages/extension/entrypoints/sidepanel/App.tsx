@@ -378,6 +378,7 @@ export default function App() {
             }
           }}
           onAccountClick={() => setScreen("account")}
+          onReanalyze={() => void analyze.run(activeListing)}
           onAddressSubmit={applyCorrectedAddress}
           candidates={analyze.result?.candidates ?? []}
           onCandidateValidate={(c) =>

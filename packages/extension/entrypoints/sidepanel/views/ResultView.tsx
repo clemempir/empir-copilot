@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Check, ChevronDown, ExternalLink, Heart, MapPin, PencilLine, User } from "lucide-react";
+import { Check, ChevronDown, ExternalLink, Heart, MapPin, PencilLine, RotateCw, User } from "lucide-react";
 import { stripAccentsLower } from "@empir/core";
 import type { GeoPoint, Listing, QuickAnalysis } from "@empir/core";
 import type { ResolvedAddress } from "@empir/core";
@@ -38,6 +38,8 @@ export interface ResultViewProps {
   hasUnread?: boolean;
   onSaveClick: () => void;
   onAccountClick: () => void;
+  /** Relance l'analyse du bien affiché (résultat restauré après changement d'onglet). */
+  onReanalyze: () => void;
   saved?: boolean;
   /**
    * Saisie manuelle de l'adresse (relance l'analyse avec l'adresse exacte).
@@ -110,6 +112,7 @@ export function ResultView({
   hasUnread,
   onSaveClick,
   onAccountClick,
+  onReanalyze,
   saved,
   onAddressSubmit,
 }: ResultViewProps) {
@@ -177,6 +180,14 @@ export function ResultView({
           </span>
         </div>
         <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={onReanalyze}
+            title="Relancer l'analyse"
+            className="grid size-8 place-items-center rounded-[9px] transition-all hover:bg-white/5"
+          >
+            <RotateCw className="size-4 text-empir-muted" strokeWidth={1.8} />
+          </button>
           <button
             type="button"
             onClick={onSaveClick}
