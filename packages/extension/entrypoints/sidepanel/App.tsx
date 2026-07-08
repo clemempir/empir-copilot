@@ -323,7 +323,7 @@ export default function App() {
           hasUnread={notifs.items.some((n) => !n.read)}
         />
       )}
-      {mainStatus === "analyzing" && <AnalyzingView />}
+      {mainStatus === "analyzing" && <AnalyzingView listing={activeListing} />}
       {mainStatus === "result" && activeListing && (
         <ResultView
           listing={activeListing}

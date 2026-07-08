@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
-import { EmpirLogo, StepProgress, type StepStatus } from "@/components/empir";
+import type { Listing } from "@empir/core";
+import {
+  EmpirLogo,
+  PROPERTY_VISUALS,
+  propertyKind,
+  StepProgress,
+  type StepStatus,
+} from "@/components/empir";
 
 const STEPS = [
   "Lecture de l'annonce",
@@ -9,7 +16,12 @@ const STEPS = [
   "Géorisques + PLU + taxe foncière",
 ];
 
-export function AnalyzingView() {
+export interface AnalyzingViewProps {
+  /** Bien en cours d'analyse — affiche le visuel maison/appartement/immeuble. */
+  listing?: Listing | null;
+}
+
+export function AnalyzingView({ listing }: AnalyzingViewProps) {
   // Progression simulée : reflète le pipeline parallèle côté Edge Function.
   // Le sidepanel passera en mode `result` dès la réception de la réponse.
   const [tick, setTick] = useState(0);
@@ -35,6 +47,14 @@ export function AnalyzingView() {
           <span className="absolute inset-0 rounded-full bg-empir-primary/15 animate-[ping_2.6s_cubic-bezier(0,0,0.2,1)_infinite]" />
           <span className="absolute inset-2 rounded-full bg-empir-primary/20" />
           <span className="absolute inset-5 rounded-full bg-gradient-to-br from-empir-primary to-empir-primary-dark shadow-empir-glow" />
+          {listing && (
+            <img
+              src={PROPERTY_VISUALS[propertyKind(listing)].src}
+              alt={PROPERTY_VISUALS[propertyKind(listing)].alt}
+              className="absolute left-1/2 top-1/2 size-20 -translate-x-1/2 -translate-y-1/2 object-contain"
+              style={{ filter: "drop-shadow(0 6px 12px rgba(0,0,0,0.5))" }}
+            />
+          )}
         </div>
         <h2 className="mt-7 text-[15.5px] font-semibold text-empir-text">
           Analyse du bien en cours

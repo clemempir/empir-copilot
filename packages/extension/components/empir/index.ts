@@ -30,3 +30,5 @@ export { StepProgress } from "./step-progress";
 export type { StepProgressProps, StepStatus } from "./step-progress";
 export { SectionHeader } from "./section-header";
 export type { SectionHeaderProps } from "./section-header";
+export { PROPERTY_VISUALS, propertyKind } from "./property-visual";
+export type { PropertyKind } from "./property-visual";
