@@ -20,13 +20,14 @@ export function useCopropriete(resolved: ResolvedAddress | undefined): UseCoprop
   const parcelId = resolved?.parcelId;
   const section = resolved?.parcelSection;
   const numero = resolved?.parcelNumero;
+  const address = resolved?.address;
   const lat = resolved?.lat;
   const lon = resolved?.lon;
 
   useEffect(() => {
-    // L'IDU seul suffit au match direct (cas courant). Section/numéro ne servent
-    // qu'au repli géographique (Paris/Lyon/Marseille) — facultatifs ici.
-    if (!parcelId) {
+    // Il faut au moins une clé : la parcelle (match IDU/géo) ou l'adresse (match
+    // n° + rue + code postal, qui rattrape une parcelle imprécise type Le Bon Coin).
+    if (!parcelId && !address) {
       setCopro(null);
       setLoading(false);
       return;
@@ -36,9 +37,10 @@ export function useCopropriete(resolved: ResolvedAddress | undefined): UseCoprop
     (async () => {
       try {
         const info = await cachedCopropriete({
-          id: parcelId,
+          id: parcelId ?? "",
           section: section ?? "",
           numero: numero ?? "",
+          address,
           lat,
           lon,
         });
@@ -52,7 +54,7 @@ export function useCopropriete(resolved: ResolvedAddress | undefined): UseCoprop
     return () => {
       cancelled = true;
     };
-  }, [parcelId, section, numero, lat, lon]);
+  }, [parcelId, section, numero, address, lat, lon]);
 
   return { copro, loading };
 }

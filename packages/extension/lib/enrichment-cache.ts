@@ -48,9 +48,9 @@ export const cachedCommuneSales = memoized(fetchCommuneSales, (citycode) => city
 /** Rapport de risques Géorisques de la commune, mémoïsé par code INSEE. */
 export const cachedRisks = memoized(fetchRisks, (citycode) => citycode, 20);
 
-/** Copropriété (RNIC) du bien, mémoïsée par IDU de parcelle. */
+/** Copropriété (RNIC) du bien, mémoïsée par parcelle + adresse. */
 export const cachedCopropriete = memoized(
   (parcel: CoproprieteParcel) => fetchCopropriete(parcel),
-  (parcel) => parcel.id,
+  (parcel) => `${parcel.id}|${parcel.address ?? ""}`,
   50,
 );

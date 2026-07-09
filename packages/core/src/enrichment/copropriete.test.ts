@@ -19,13 +19,15 @@ function row(fields: Record<string, string | number | null>): Record<string, unk
 }
 
 /**
- * fetchFn simulé : route selon l'URL. `direct` répond à la requête IDU exact,
- * `box` répond à la requête bounding box. `undefined` = liste vide.
+ * fetchFn simulé : route selon l'URL. `direct` = requête IDU exact, `address` =
+ * requête code postal + rue, `box` = bounding box. `undefined` = liste vide.
  */
-function stubFetch(opts: { direct?: unknown[]; box?: unknown[] }) {
+function stubFetch(opts: { direct?: unknown[]; address?: unknown[]; box?: unknown[] }) {
   return vi.fn(async (url: string) => {
-    const isBox = url.includes("latitude__greater");
-    const data = isBox ? (opts.box ?? []) : (opts.direct ?? []);
+    let data: unknown[] = [];
+    if (url.includes("latitude__greater")) data = opts.box ?? [];
+    else if (url.includes("code_postal_adresse__exact")) data = opts.address ?? [];
+    else if (url.includes("reference_cadastrale_1__exact")) data = opts.direct ?? [];
     return { ok: true, json: async () => ({ data }) } as unknown as Response;
   });
 }
@@ -104,6 +106,67 @@ describe("fetchCopropriete — repli géographique (Paris/Lyon/Marseille)", () =
     });
     const res = await fetchCopropriete(PARIS, { fetchFn: fetchFn as unknown as typeof fetch });
     expect(res).toBeNull();
+  });
+});
+
+describe("fetchCopropriete — match par adresse (parcelle imprécise Le Bon Coin)", () => {
+  // Cas réel : annonce « 141 Rue Marie Curie, 40280 » ; le cadastre a pointé
+  // AB0887 (aucune copro), mais l'adresse tombe pile sur LES COTEAUX (144 lots).
+  const bien: CoproprieteParcel = {
+    id: "40281000AB0887",
+    section: "AB",
+    numero: "887",
+    address: "141 Rue Marie Curie, 40280 Saint-Pierre-du-Mont",
+    lat: 43.879841,
+    lon: -0.523134,
+  };
+  const rows = [
+    row({ numero_voie_adresse: "141 r marie curie", code_postal_adresse: "40280", nombre_total_lots: "144", nombre_lots_habitation: "120", nom_usage_copropriete: "SDCLES COTEAUX DE SAINT PIERRE" }),
+    row({ numero_voie_adresse: "53 r marie curie", code_postal_adresse: "40280", nombre_total_lots: "108" }),
+    row({ numero_voie_adresse: "250 r frederic joliot curie", code_postal_adresse: "40280", nombre_total_lots: "31" }),
+  ];
+
+  it("la parcelle ne donne rien → l'adresse trouve la bonne copro au numéro près", async () => {
+    const fetchFn = stubFetch({ direct: [], address: rows });
+    const res = await fetchCopropriete(bien, { fetchFn: fetchFn as unknown as typeof fetch });
+    expect(res).toMatchObject({ isCopropriete: true, lotsTotal: 144, lotsHabitation: 120 });
+    // Direct (vide) puis requête adresse — pas de bounding box nécessaire.
+    const urls = fetchFn.mock.calls.map((c) => c[0] as string);
+    expect(urls[1]).toContain("code_postal_adresse__exact=40280");
+    expect(urls[1]).toContain("numero_voie_adresse__contains=");
+  });
+
+  it("ne confond pas avec le n° 53 de la même rue (autre copro)", async () => {
+    const fetchFn = stubFetch({ direct: [], address: rows });
+    const res = await fetchCopropriete({ ...bien, address: "53 Rue Marie Curie, 40280 Saint-Pierre-du-Mont" }, {
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
+    expect(res?.lotsTotal).toBe(108);
+  });
+
+  it("numéro absent au registre → pas de match adresse (pas de faux positif)", async () => {
+    const fetchFn = stubFetch({ direct: [], address: rows });
+    const res = await fetchCopropriete({ ...bien, address: "999 Rue Marie Curie, 40280 Saint-Pierre-du-Mont" }, {
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
+    expect(res).toBeNull();
+  });
+
+  it("le match direct par IDU a priorité (pas de requête adresse)", async () => {
+    const fetchFn = stubFetch({ direct: [row({ nombre_total_lots: "12" })], address: rows });
+    const res = await fetchCopropriete(bien, { fetchFn: fetchFn as unknown as typeof fetch });
+    expect(res?.lotsTotal).toBe(12);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("fonctionne sans parcelle, avec la seule adresse", async () => {
+    const fetchFn = stubFetch({ address: rows });
+    const res = await fetchCopropriete({ id: "", section: "", numero: "", address: bien.address }, {
+      fetchFn: fetchFn as unknown as typeof fetch,
+    });
+    expect(res?.lotsTotal).toBe(144);
+    // Pas d'IDU → on ne requête pas reference_cadastrale ; on va direct à l'adresse.
+    expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 });
 
