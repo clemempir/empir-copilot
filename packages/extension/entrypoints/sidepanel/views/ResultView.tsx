@@ -531,8 +531,8 @@ export function ResultView({
                 verified={resolvedOk.verifiedDpe.class as DpeClass}
                 note={`${resolvedOk.verifiedDpe.kwhM2} kWh/m²/an · ${resolvedOk.verifiedDpe.gesKgCO2M2} kg CO₂/m²/an`}
               />
+              {dpeDetails && <DpeDetailsCard details={dpeDetails} />}
             </div>
-            {dpeDetails && <DpeDetailsCard details={dpeDetails} />}
           </>
         )}
 

@@ -38,7 +38,8 @@ function QualityRow({ label, value }: { label: string; value: DpeQuality }) {
 
 /**
  * Détail « second œuvre » du DPE réel (chauffage, fenêtres, isolation), dépliable.
- * Met en avant les points critiques (qualité « insuffisante ») dès l'état replié.
+ * Conçu pour s'intégrer DANS l'encart DPE (sous les barres) : simple séparateur,
+ * pas de carte autour. Met en avant les points critiques dès l'état replié.
  */
 export function DpeDetailsCard({ details, className }: DpeDetailsCardProps) {
   const [open, setOpen] = React.useState(false);
@@ -48,14 +49,14 @@ export function DpeDetailsCard({ details, className }: DpeDetailsCardProps) {
   const critical = [isolation, fenetres].filter((q) => q === "insuffisante").length;
 
   return (
-    <div className={cn("mt-[11px] overflow-hidden rounded-empir-card border border-empir-line bg-empir-card", className)}>
+    <div className={cn("mt-3 border-t border-empir-line pt-1", className)}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between gap-2 px-3.5 py-2.5 text-left"
+        className="flex w-full items-center justify-between gap-2 py-1.5 text-left"
       >
         <div className="flex min-w-0 items-baseline gap-1.5">
-          <span className="text-[12px] font-semibold text-empir-text">Détail du logement</span>
+          <span className="text-[12px] font-semibold text-empir-text">Détail DPE</span>
           {critical > 0 ? (
             <span className="truncate text-[10.5px] text-empir-danger">
               · {critical} point{critical > 1 ? "s" : ""} à surveiller
@@ -71,7 +72,7 @@ export function DpeDetailsCard({ details, className }: DpeDetailsCardProps) {
       </button>
 
       {open && (
-        <div className="border-t border-empir-line px-3.5 pb-1.5 pt-0.5">
+        <div className="pb-0.5">
           {chauffage && (
             <div className="flex items-center justify-between gap-3 border-b border-empir-line py-2 last:border-b-0">
               <span className="text-[12px] text-empir-text">Chauffage</span>
