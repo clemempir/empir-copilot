@@ -121,6 +121,10 @@ export interface ResolvedAddress {
   lon: number;
   /** Référence cadastrale (`75103000AB0042`) si disponible. */
   parcelId?: string;
+  /** Section cadastrale (`CL`) si disponible. */
+  parcelSection?: string;
+  /** Numéro de parcelle sans zéros de tête (`96`) si disponible. */
+  parcelNumero?: string;
   /** ID du certificat ADEME source. */
   ademeCertId?: string;
   /** 0-100, confiance combinée (accumulation + marge, accordée à la géo). */

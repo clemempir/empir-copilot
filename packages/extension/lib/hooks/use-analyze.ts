@@ -31,6 +31,7 @@ export interface AnalysisResult {
   enrichments?: {
     plu?: unknown;
     taxeFonciere?: unknown;
+    patrimoine?: unknown;
   };
   /** `limit` null = illimité (compte vérifié). `reason` = "account_required" quand bloqué. */
   usage: { used: number; limit: number | null; allowed: boolean; plan: string; reason?: string };

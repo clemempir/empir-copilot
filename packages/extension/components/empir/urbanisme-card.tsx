@@ -10,6 +10,8 @@ export interface UrbanismeCardProps {
   description?: string;
   /** Variante visuelle. */
   tone?: "default" | "warn" | "info";
+  /** Statut patrimonial, exposé en `data-statut` pour un code couleur CSS. */
+  statut?: "concerne" | "non-concerne" | "inconnu";
   className?: string;
 }
 
@@ -24,11 +26,13 @@ export function UrbanismeCard({
   subtitle,
   description,
   tone = "default",
+  statut,
   className,
 }: UrbanismeCardProps) {
   const t = TONES[tone];
   return (
     <div
+      data-statut={statut}
       className={cn(
         "relative overflow-hidden rounded-empir-card border border-empir-line p-3 pl-4",
         t.bg,

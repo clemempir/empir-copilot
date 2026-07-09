@@ -119,16 +119,17 @@ Deno.serve(async (req: Request) => {
   // 2. Enrichissements parallèles (best-effort, ne bloquent pas le retour).
   // Les risques Géorisques sont récupérés côté client (use-risks) : plus la
   // peine de les charger ici.
-  const [plu, taxe] = await Promise.all([
+  const [plu, taxe, patrimoine] = await Promise.all([
     fetchPlu(lat, lon).catch(() => null),
     fetchTaxeFonciere(body.listing.location.postalCode).catch(() => null),
+    fetchPatrimoine(lat, lon).catch(() => null),
   ]);
 
   return json({
     status: "ok",
     resolvedAddress: top,
     candidates: resolveData.candidates,
-    enrichments: { plu, taxeFonciere: taxe },
+    enrichments: { plu, taxeFonciere: taxe, patrimoine },
     usage: resolveData.usage,
     debug: { resolverInput, ...(resolveData.debug ?? {}) },
   });
@@ -207,6 +208,18 @@ async function fetchPlu(lat: number | undefined, lon: number | undefined): Promi
   if (lat == null || lon == null) return null;
   const geom = encodeURIComponent(JSON.stringify({ type: "Point", coordinates: [lon, lat] }));
   const url = `https://apicarto.ign.fr/api/gpu/zone-urba?geom=${geom}`;
+  const res = await fetch(url);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+// Servitudes d'utilité publique surfaciques (module GPU) au point résolu : sert à
+// détecter les zones patrimoniales soumises à l'Architecte des Bâtiments de France
+// (AC1 abords MH, AC4 site patrimonial remarquable). Classification côté client.
+async function fetchPatrimoine(lat: number | undefined, lon: number | undefined): Promise<unknown> {
+  if (lat == null || lon == null) return null;
+  const geom = encodeURIComponent(JSON.stringify({ type: "Point", coordinates: [lon, lat] }));
+  const url = `https://apicarto.ign.fr/api/gpu/assiette-sup-s?geom=${geom}`;
   const res = await fetch(url);
   if (!res.ok) return null;
   return res.json();

@@ -18,6 +18,8 @@ export { fetchCommuneInfo, citycodeFromLatLon, postalCodeOfCity } from "./enrich
 export type { FetchCommuneInfoOptions } from "./enrichment/commune.ts";
 export { fetchPluZone, explainPluZone } from "./enrichment/plu.ts";
 export type { FetchPluZoneOptions, PluExplanation } from "./enrichment/plu.ts";
+export { getZonePatrimoine } from "./enrichment/patrimoine.ts";
+export type { ZonePatrimoine, PatrimoineCategorie } from "./enrichment/patrimoine.ts";
 export { fetchTaxeFonciere } from "./enrichment/taxe-fonciere.ts";
 export type { FetchTaxeFonciereOptions } from "./enrichment/taxe-fonciere.ts";
 export { buildQuickAnalysis, scoreLabel } from "./scoring/score.ts";

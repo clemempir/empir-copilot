@@ -40,7 +40,7 @@ export interface ResolveDebug {
  * `resolve-address` : à bumper dans le MÊME commit que tout changement de
  * comportement du résolveur, sinon la prod servira des résolutions figées.
  */
-export const RESOLVER_VERSION = "v22-source-unique";
+export const RESOLVER_VERSION = "v23-cadastre-idu";
 
 // ── Constantes paramétrables (calibration future) ──────────────────────────
 
@@ -275,6 +275,8 @@ export async function resolveAddress(
       try {
         const parcel = await lookupParcel({ lat: top.lat, lon: top.lon, fetchFn });
         top.parcelId = parcel?.id;
+        top.parcelSection = parcel?.section;
+        top.parcelNumero = parcel?.numero;
       } catch {
         // best-effort
       }

@@ -4,6 +4,7 @@ import {
   buildQuickAnalysis,
   correctedLocation,
   explainPluZone,
+  getZonePatrimoine,
   type GeoPoint,
   type Listing,
   type QuickAnalysis,
@@ -393,7 +394,12 @@ export default function App() {
           }
           hasUnread={notifs.items.some((n) => !n.read)}
           risks={risksState.risks}
-          urbanisme={analyze.result?.enrichments?.plu ? mapUrbanisme(analyze.result.enrichments.plu) : []}
+          urbanisme={[
+            ...(analyze.result?.enrichments?.plu ? mapUrbanisme(analyze.result.enrichments.plu) : []),
+            // Encart patrimoine ABF, juste à côté de l'encart Zone. Présent dès
+            // qu'une analyse a abouti (les 3 états concerné/non/inconnu sont gérés).
+            ...(analyze.result ? [patrimoineCard(analyze.result.enrichments?.patrimoine)] : []),
+          ]}
           salesHistory={market.timeline?.nodes ?? []}
           salesSummary={market.timeline?.summary ?? null}
         />
@@ -421,6 +427,47 @@ function timeAgo(iso: string): string {
   const h = Math.floor(min / 60);
   if (h < 24) return `${h} h`;
   return `${Math.floor(h / 24)} j`;
+}
+
+// Encart « Zone patrimoine remarquable » (ABF) à partir du FeatureCollection
+// `assiette-sup-s` brut renvoyé par le serveur (null si IGN injoignable).
+function patrimoineCard(raw: unknown): {
+  zone: string;
+  subtitle?: string;
+  description?: string;
+  tone: "default" | "warn" | "info";
+  statut: "concerne" | "non-concerne" | "inconnu";
+} {
+  const zp = getZonePatrimoine(raw);
+  const zone = "Zone patrimoine remarquable";
+  // Service IGN indisponible.
+  if (zp == null) {
+    return {
+      zone,
+      subtitle: "Information indisponible",
+      description:
+        "Le service de l'IGN est momentanément injoignable ; la présence d'une protection patrimoniale n'a pas pu être vérifiée.",
+      tone: "info",
+      statut: "inconnu",
+    };
+  }
+  // Non concerné.
+  if (!zp.concerne) {
+    return {
+      zone,
+      subtitle: "Non concerné",
+      description:
+        "Le bien n'est pas en zone patrimoniale protégée ; aucun avis de l'Architecte des Bâtiments de France n'est requis à ce titre.",
+      tone: "default",
+      statut: "non-concerne",
+    };
+  }
+  // Concerné : on cumule les libellés et les implications des catégories AC1/AC4.
+  const subtitle = zp.categories.map((c) => c.label).join(" · ");
+  const description = zp.categories
+    .map((c) => (c.nom ? `${c.nom} — ${c.implication}` : c.implication))
+    .join(" ");
+  return { zone, subtitle, description, tone: "warn", statut: "concerne" };
 }
 
 // V1 : adapters minimaux. La forme exacte des payloads Géorisques / PLU varie ;

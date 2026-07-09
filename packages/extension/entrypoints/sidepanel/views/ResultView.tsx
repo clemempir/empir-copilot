@@ -32,7 +32,13 @@ export interface ResultViewProps {
   onCandidateValidate?: (candidate: ResolvedAddress) => void;
   comparablesMeta?: string;
   risks?: { label: string; level: RiskLevel; statusLabel?: string }[];
-  urbanisme?: { zone: string; subtitle?: string; description?: string; tone?: "default" | "warn" | "info" }[];
+  urbanisme?: {
+    zone: string;
+    subtitle?: string;
+    description?: string;
+    tone?: "default" | "warn" | "info";
+    statut?: "concerne" | "non-concerne" | "inconnu";
+  }[];
   salesHistory?: { year: number; price: number }[];
   /** Résumé d'évolution sous la frise, ex. « +22 % depuis 2021 · +4 %/an ». */
   salesSummary?: string | null;
@@ -445,7 +451,15 @@ export function ResultView({
           {listing.rooms != null && <CharRow label="Pièces" shown={`${listing.rooms}`} />}
           {listing.bedrooms != null && <CharRow label="Chambres" shown={`${listing.bedrooms}`} />}
           {resolvedOk?.parcelId && (
-            <DataRow label="Cadastre" value={resolvedOk.parcelId} />
+            <DataRow
+              label="N° de parcelle"
+              value={
+                resolvedOk.parcelSection && resolvedOk.parcelNumero
+                  ? `${resolvedOk.parcelSection} ${resolvedOk.parcelNumero}`
+                  : resolvedOk.parcelId
+              }
+              hint={resolvedOk.parcelId}
+            />
           )}
         </div>
 
