@@ -32,4 +32,6 @@ export const HOST_PERMISSIONS = [
   "https://geo.api.gouv.fr/*",
   // data.economie.gouv.fr — taxe foncière
   "https://data.economie.gouv.fr/*",
+  // API tabulaire data.gouv.fr — registre national des copropriétés (RNIC)
+  "https://tabular-api.data.gouv.fr/*",
 ];

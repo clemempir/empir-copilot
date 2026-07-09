@@ -15,6 +15,7 @@ import { useAuth } from "@/lib/hooks/use-auth";
 import { useAnalyze } from "@/lib/hooks/use-analyze";
 import { useMarket } from "@/lib/hooks/use-market";
 import { useRisks } from "@/lib/hooks/use-risks";
+import { useCopropriete } from "@/lib/hooks/use-copropriete";
 import { useSavedListings } from "@/lib/hooks/use-saved-listings";
 import { useNotifications } from "@/lib/hooks/use-notifications";
 import { useProfile } from "@/lib/hooks/use-profile";
@@ -166,6 +167,8 @@ export default function App() {
     activeListing?.geo?.lat ?? analyze.result?.resolvedAddress?.lat,
     activeListing?.geo?.lon ?? analyze.result?.resolvedAddress?.lon,
   );
+  // Copropriété (registre national RNIC), côté client, clé = parcelle résolue.
+  const coproState = useCopropriete(analyze.result?.resolvedAddress);
   const quick: QuickAnalysis = useMemo(() => {
     if (!activeListing) {
       return { listingPricePerM2: null, marketGapPct: null, market: null, score: null, scoreLabel: "—" };
@@ -363,6 +366,7 @@ export default function App() {
             ) : undefined
           }
           resolvedAddress={analyze.result?.resolvedAddress}
+          copro={coproState.copro}
           saved={saved.isSaved(activeListing.url)}
           onSaveClick={() => {
             if (!auth.user) return setScreen("signup");

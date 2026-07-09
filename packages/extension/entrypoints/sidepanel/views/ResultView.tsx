@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Check, ChevronDown, ExternalLink, Heart, MapPin, PencilLine, RotateCw, User } from "lucide-react";
 import { stripAccentsLower } from "@empir/core";
-import type { GeoPoint, Listing, QuickAnalysis } from "@empir/core";
+import type { CoproprieteInfo, GeoPoint, Listing, QuickAnalysis } from "@empir/core";
 import type { ResolvedAddress } from "@empir/core";
 import { cn } from "@/lib/utils";
 import { AddressEditor } from "./AddressEditor";
@@ -26,6 +26,8 @@ export interface ResultViewProps {
   /** Encart affiché au-dessus de la carte adresse (ex. dernière notification). */
   notice?: ReactNode;
   resolvedAddress?: ResolvedAddress;
+  /** Copropriété (registre RNIC) si la parcelle y figure ; sinon rien d'affiché. */
+  copro?: CoproprieteInfo | null;
   /** Tous les rapprochements d'adresse trouvés par l'algo (liste déroulante). */
   candidates?: ResolvedAddress[];
   /** L'utilisateur valide un rapprochement → il devient l'adresse affirmée. */
@@ -83,6 +85,7 @@ export function ResultView({
   quick,
   notice,
   resolvedAddress,
+  copro,
   candidates = [],
   onCandidateValidate,
   comparablesMeta,
@@ -459,6 +462,17 @@ export function ResultView({
                   : resolvedOk.parcelId
               }
               hint={resolvedOk.parcelId}
+            />
+          )}
+          {copro && (
+            <DataRow
+              label="Copropriété"
+              value={`${copro.lotsTotal} lots`}
+              hint={
+                copro.lotsHabitation != null
+                  ? `${copro.lotsHabitation} à usage d'habitation`
+                  : undefined
+              }
             />
           )}
         </div>

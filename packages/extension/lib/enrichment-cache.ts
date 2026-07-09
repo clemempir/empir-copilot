@@ -1,4 +1,5 @@
-import { citycodeFromLatLon, fetchCommuneSales, fetchRisks } from "@empir/core";
+import { citycodeFromLatLon, fetchCommuneSales, fetchCopropriete, fetchRisks } from "@empir/core";
+import type { CoproprieteParcel } from "@empir/core";
 
 /**
  * Caches mémoire (durée de vie du sidepanel) pour les appels d'enrichissement
@@ -46,3 +47,10 @@ export const cachedCommuneSales = memoized(fetchCommuneSales, (citycode) => city
 
 /** Rapport de risques Géorisques de la commune, mémoïsé par code INSEE. */
 export const cachedRisks = memoized(fetchRisks, (citycode) => citycode, 20);
+
+/** Copropriété (RNIC) du bien, mémoïsée par IDU de parcelle. */
+export const cachedCopropriete = memoized(
+  (parcel: CoproprieteParcel) => fetchCopropriete(parcel),
+  (parcel) => parcel.id,
+  50,
+);

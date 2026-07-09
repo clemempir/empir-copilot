@@ -137,11 +137,22 @@ export interface TaxeFonciereInfo {
   tauxTeom: number | null;
 }
 
+export interface CoproprieteInfo {
+  isCopropriete: true;
+  /** Nombre total de lots de la copropriété. */
+  lotsTotal: number;
+  /** Dont lots à usage d'habitation, si connu. */
+  lotsHabitation?: number;
+  /** Nom d'usage de la copropriété (en réserve, non affiché en v1). */
+  nom?: string;
+}
+
 export interface Enrichments {
   risks?: RiskReport;
   commune?: CommuneInfo;
   plu?: PluZone | null;
   taxeFonciere?: TaxeFonciereInfo | null;
+  copropriete?: CoproprieteInfo | null;
 }
 
 export interface Report {

@@ -22,6 +22,8 @@ export { getZonePatrimoine } from "./enrichment/patrimoine.ts";
 export type { ZonePatrimoine, PatrimoineCategorie } from "./enrichment/patrimoine.ts";
 export { fetchTaxeFonciere } from "./enrichment/taxe-fonciere.ts";
 export type { FetchTaxeFonciereOptions } from "./enrichment/taxe-fonciere.ts";
+export { fetchCopropriete, matchCopropriete } from "./enrichment/copropriete.ts";
+export type { CoproprieteParcel, FetchCoproprieteOptions } from "./enrichment/copropriete.ts";
 export { buildQuickAnalysis, scoreLabel } from "./scoring/score.ts";
 export { estimateAcquisitionCost } from "./scoring/acquisition.ts";
 export type { AcquisitionCost } from "./scoring/acquisition.ts";
