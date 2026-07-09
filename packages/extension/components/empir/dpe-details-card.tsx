@@ -37,6 +37,35 @@ function QualityRow({ label, value }: { label: string; value: DpeQuality }) {
 }
 
 /**
+ * Type de vitrage déduit de la qualité des menuiseries. L'ADEME n'expose pas le
+ * vitrage en clair, mais la note (calculée sur le Uw) le trahit : le simple
+ * vitrage donne toujours « insuffisante », le double « moyenne » et plus.
+ * Étiqueté « estimé » — c'est une déduction, pas une donnée brute.
+ */
+const GLAZING: Record<DpeQuality, string> = {
+  insuffisante: "Simple vitrage",
+  moyenne: "Double vitrage",
+  bonne: "Double vitrage",
+  "très bonne": "Double / triple vitrage",
+};
+
+function WindowsRow({ value }: { value: DpeQuality }) {
+  const s = QUALITY_STYLE[value];
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-empir-line py-2 last:border-b-0">
+      <div className="flex items-center gap-2.5">
+        <span className={cn("size-2 rounded-full", s.dot)} />
+        <span className="text-[12px] text-empir-text">Fenêtres</span>
+      </div>
+      <span className="text-right text-[11.5px] font-medium text-empir-text">
+        {GLAZING[value]}
+        <span className="block text-[10px] text-empir-muted-2">estimé · menuiseries {value}</span>
+      </span>
+    </div>
+  );
+}
+
+/**
  * Détail « second œuvre » du DPE réel (chauffage, fenêtres, isolation), dépliable.
  * Conçu pour s'intégrer DANS l'encart DPE (sous les barres) : simple séparateur,
  * pas de carte autour. Met en avant les points critiques dès l'état replié.
@@ -84,7 +113,7 @@ export function DpeDetailsCard({ details, className }: DpeDetailsCardProps) {
               </span>
             </div>
           )}
-          {fenetres && <QualityRow label="Fenêtres" value={fenetres} />}
+          {fenetres && <WindowsRow value={fenetres} />}
           {isolation && <QualityRow label="Isolation" value={isolation} />}
         </div>
       )}
