@@ -24,6 +24,8 @@ export { fetchTaxeFonciere } from "./enrichment/taxe-fonciere.ts";
 export type { FetchTaxeFonciereOptions } from "./enrichment/taxe-fonciere.ts";
 export { fetchCopropriete, matchCopropriete } from "./enrichment/copropriete.ts";
 export type { CoproprieteParcel, FetchCoproprieteOptions } from "./enrichment/copropriete.ts";
+export { fetchDpeDetails } from "./enrichment/dpe-details.ts";
+export type { FetchDpeDetailsOptions } from "./enrichment/dpe-details.ts";
 export { buildQuickAnalysis, scoreLabel } from "./scoring/score.ts";
 export { estimateAcquisitionCost } from "./scoring/acquisition.ts";
 export type { AcquisitionCost } from "./scoring/acquisition.ts";

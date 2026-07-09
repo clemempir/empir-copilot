@@ -16,6 +16,7 @@ import { useAnalyze } from "@/lib/hooks/use-analyze";
 import { useMarket } from "@/lib/hooks/use-market";
 import { useRisks } from "@/lib/hooks/use-risks";
 import { useCopropriete } from "@/lib/hooks/use-copropriete";
+import { useDpeDetails } from "@/lib/hooks/use-dpe-details";
 import { useSavedListings } from "@/lib/hooks/use-saved-listings";
 import { useNotifications } from "@/lib/hooks/use-notifications";
 import { useProfile } from "@/lib/hooks/use-profile";
@@ -169,6 +170,8 @@ export default function App() {
   );
   // Copropriété (registre national RNIC), côté client, clé = parcelle résolue.
   const coproState = useCopropriete(analyze.result?.resolvedAddress);
+  // Détail DPE réel (chauffage/fenêtres/isolation), côté client, clé = certificat ADEME.
+  const dpeDetailsState = useDpeDetails(analyze.result?.resolvedAddress?.ademeCertId);
   const quick: QuickAnalysis = useMemo(() => {
     if (!activeListing) {
       return { listingPricePerM2: null, marketGapPct: null, market: null, score: null, scoreLabel: "—" };
@@ -367,6 +370,7 @@ export default function App() {
           }
           resolvedAddress={analyze.result?.resolvedAddress}
           copro={coproState.copro}
+          dpeDetails={dpeDetailsState.details}
           saved={saved.isSaved(activeListing.url)}
           onSaveClick={() => {
             if (!auth.user) return setScreen("signup");

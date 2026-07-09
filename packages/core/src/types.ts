@@ -137,6 +137,20 @@ export interface TaxeFonciereInfo {
   tauxTeom: number | null;
 }
 
+/** Échelle de qualité ADEME (isolation / menuiseries). */
+export type DpeQuality = "insuffisante" | "moyenne" | "bonne" | "très bonne";
+
+export interface DpeDetails {
+  /** Type de générateur de chauffage principal (ex. « Chaudière gaz à condensation »). */
+  chauffage?: string;
+  /** Énergie principale de chauffage (ex. « Gaz naturel »). */
+  energieChauffage?: string;
+  /** Qualité d'isolation de l'enveloppe (globale). */
+  isolation?: DpeQuality;
+  /** Qualité d'isolation des menuiseries (proxy simple/double vitrage). */
+  fenetres?: DpeQuality;
+}
+
 export interface CoproprieteInfo {
   isCopropriete: true;
   /** Nombre total de lots de la copropriété. */

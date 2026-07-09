@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Check, ChevronDown, ExternalLink, Heart, MapPin, PencilLine, RotateCw, User } from "lucide-react";
 import { stripAccentsLower } from "@empir/core";
-import type { CoproprieteInfo, GeoPoint, Listing, QuickAnalysis } from "@empir/core";
+import type { CoproprieteInfo, DpeDetails, GeoPoint, Listing, QuickAnalysis } from "@empir/core";
 import type { ResolvedAddress } from "@empir/core";
 import { cn } from "@/lib/utils";
 import { AddressEditor } from "./AddressEditor";
@@ -10,6 +10,7 @@ import {
   DataRow,
   DpeBars,
   type DpeClass,
+  DpeDetailsCard,
   PROPERTY_VISUALS,
   propertyKind,
   type RiskLevel,
@@ -28,6 +29,8 @@ export interface ResultViewProps {
   resolvedAddress?: ResolvedAddress;
   /** Copropriété (registre RNIC) si la parcelle y figure ; sinon rien d'affiché. */
   copro?: CoproprieteInfo | null;
+  /** Détail DPE réel (chauffage/fenêtres/isolation) si le certificat ADEME est connu. */
+  dpeDetails?: DpeDetails | null;
   /** Tous les rapprochements d'adresse trouvés par l'algo (liste déroulante). */
   candidates?: ResolvedAddress[];
   /** L'utilisateur valide un rapprochement → il devient l'adresse affirmée. */
@@ -86,6 +89,7 @@ export function ResultView({
   notice,
   resolvedAddress,
   copro,
+  dpeDetails,
   candidates = [],
   onCandidateValidate,
   comparablesMeta,
@@ -528,6 +532,7 @@ export function ResultView({
                 note={`${resolvedOk.verifiedDpe.kwhM2} kWh/m²/an · ${resolvedOk.verifiedDpe.gesKgCO2M2} kg CO₂/m²/an`}
               />
             </div>
+            {dpeDetails && <DpeDetailsCard details={dpeDetails} />}
           </>
         )}
 

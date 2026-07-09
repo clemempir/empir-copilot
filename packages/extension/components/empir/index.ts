@@ -14,6 +14,8 @@ export { ComparablePriceCard } from "./comparable-price-card";
 export type { ComparablePriceCardProps } from "./comparable-price-card";
 export { DpeBars } from "./dpe-bars";
 export type { DpeBarsProps, DpeClass } from "./dpe-bars";
+export { DpeDetailsCard } from "./dpe-details-card";
+export type { DpeDetailsCardProps } from "./dpe-details-card";
 export { RiskRow } from "./risk-row";
 export type { RiskRowProps, RiskLevel } from "./risk-row";
 export { RiskSummary } from "./risk-summary";
