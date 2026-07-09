@@ -1,7 +1,15 @@
 import * as React from "react";
 import { ChevronDown } from "lucide-react";
-import type { DpeDetails, DpeQuality } from "@empir/core";
+import type { DpeDetails, DpePoste, DpeQuality } from "@empir/core";
 import { cn } from "@/lib/utils";
+
+/** Libellé français d'un poste de déperdition. */
+const POSTE_LABEL: Record<DpePoste, string> = {
+  murs: "murs",
+  toiture: "toiture / combles",
+  plancherBas: "plancher bas",
+  fenetres: "fenêtres",
+};
 
 export interface DpeDetailsCardProps {
   details: DpeDetails;
@@ -65,17 +73,64 @@ function WindowsRow({ value }: { value: DpeQuality }) {
   );
 }
 
+/** Sous-ligne d'isolation (poste), indentée sous le titre « Isolation ». */
+function IsoSubRow({ label, value, weak }: { label: string; value: DpeQuality; weak?: boolean }) {
+  const s = QUALITY_STYLE[value];
+  return (
+    <div className="flex items-center justify-between gap-3 py-1 pl-[18px]">
+      <div className="flex items-center gap-2.5">
+        <span className={cn("size-1.5 rounded-full", s.dot)} />
+        <span className={cn("text-[11.5px]", weak ? "font-medium text-empir-text" : "text-empir-muted")}>
+          {label}
+        </span>
+      </div>
+      <span
+        className={cn(
+          "rounded-empir-pill px-2 py-[2px] text-[10px] font-medium uppercase tracking-[0.08em]",
+          s.pill,
+        )}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+/** Bloc « Isolation » : détail par poste ; retombe sur la note globale à défaut. */
+function IsolationBlock({ details }: { details: DpeDetails }) {
+  const { isolation, isolationMurs, isolationToiture, isolationPlancherBas, pointFaible } = details;
+  const all: { poste: DpePoste; label: string; value?: DpeQuality }[] = [
+    { poste: "murs", label: "Murs", value: isolationMurs },
+    { poste: "toiture", label: "Toiture / combles", value: isolationToiture },
+    { poste: "plancherBas", label: "Plancher bas", value: isolationPlancherBas },
+  ];
+  const postes = all.filter((p) => p.value);
+
+  if (postes.length === 0) {
+    return isolation ? <QualityRow label="Isolation" value={isolation} /> : null;
+  }
+  return (
+    <div className="border-b border-empir-line py-2 last:border-b-0">
+      <span className="text-[12px] text-empir-text">Isolation</span>
+      <div className="mt-0.5">
+        {postes.map((p) => (
+          <IsoSubRow key={p.poste} label={p.label} value={p.value!} weak={p.poste === pointFaible} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /**
- * Détail « second œuvre » du DPE réel (chauffage, fenêtres, isolation), dépliable.
- * Conçu pour s'intégrer DANS l'encart DPE (sous les barres) : simple séparateur,
- * pas de carte autour. Met en avant les points critiques dès l'état replié.
+ * Détail « second œuvre » du DPE réel (chauffage, fenêtres, isolation par poste),
+ * dépliable. Conçu pour s'intégrer DANS l'encart DPE (sous les barres) : simple
+ * séparateur, pas de carte autour. Met en avant le point faible dès l'état replié.
  */
 export function DpeDetailsCard({ details, className }: DpeDetailsCardProps) {
   const [open, setOpen] = React.useState(false);
-  const { chauffage, energieChauffage, isolation, fenetres } = details;
-  if (!chauffage && !isolation && !fenetres) return null;
-
-  const critical = [isolation, fenetres].filter((q) => q === "insuffisante").length;
+  const { chauffage, energieChauffage, isolation, isolationMurs, isolationToiture, isolationPlancherBas, fenetres, pointFaible } = details;
+  const hasIso = Boolean(isolation || isolationMurs || isolationToiture || isolationPlancherBas);
+  if (!chauffage && !hasIso && !fenetres) return null;
 
   return (
     <div className={cn("mt-3 border-t border-empir-line pt-1", className)}>
@@ -86,12 +141,12 @@ export function DpeDetailsCard({ details, className }: DpeDetailsCardProps) {
       >
         <div className="flex min-w-0 items-baseline gap-1.5">
           <span className="text-[12px] font-semibold text-empir-text">Détail DPE</span>
-          {critical > 0 ? (
-            <span className="truncate text-[10.5px] text-empir-danger">
-              · {critical} point{critical > 1 ? "s" : ""} à surveiller
-            </span>
+          {pointFaible ? (
+            <span className="truncate text-[10.5px] text-empir-danger">· point faible : {POSTE_LABEL[pointFaible]}</span>
+          ) : hasIso ? (
+            <span className="truncate text-[10.5px] text-empir-success">· bien isolé</span>
           ) : (
-            <span className="truncate text-[10.5px] text-empir-muted-2">· chauffage, isolation, fenêtres</span>
+            <span className="truncate text-[10.5px] text-empir-muted-2">· chauffage, fenêtres</span>
           )}
         </div>
         <ChevronDown
@@ -114,7 +169,7 @@ export function DpeDetailsCard({ details, className }: DpeDetailsCardProps) {
             </div>
           )}
           {fenetres && <WindowsRow value={fenetres} />}
-          {isolation && <QualityRow label="Isolation" value={isolation} />}
+          <IsolationBlock details={details} />
         </div>
       )}
     </div>

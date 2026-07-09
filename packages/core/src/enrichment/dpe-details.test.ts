@@ -97,3 +97,75 @@ describe("fetchDpeDetails", () => {
     ).rejects.toThrow(/HTTP 500/);
   });
 });
+
+describe("fetchDpeDetails — isolation par poste + point faible", () => {
+  it("détaille murs / toiture / plancher bas", async () => {
+    const fetchFn = vi.fn(async () =>
+      ok([
+        {
+          qualite_isolation_murs: "insuffisante",
+          qualite_isolation_plancher_haut_comble_perdu: "très bonne",
+          qualite_isolation_plancher_bas: "très bonne",
+          deperditions_murs: 232,
+        },
+      ]),
+    );
+    const res = await fetchDpeDetails("X", { fetchFn: fetchFn as unknown as typeof fetch });
+    expect(res).toMatchObject({
+      isolationMurs: "insuffisante",
+      isolationToiture: "très bonne",
+      isolationPlancherBas: "très bonne",
+      pointFaible: "murs",
+    });
+  });
+
+  it("coalesce la toiture : combles aménagés si perdus absents", async () => {
+    const fetchFn = vi.fn(async () =>
+      ok([{ qualite_isolation_plancher_haut_comble_amenage: "moyenne" }]),
+    );
+    const res = await fetchDpeDetails("X", { fetchFn: fetchFn as unknown as typeof fetch });
+    expect(res?.isolationToiture).toBe("moyenne");
+  });
+
+  it("point faible = plus grosse déperdition parmi les postes mal notés", async () => {
+    const fetchFn = vi.fn(async () =>
+      ok([
+        {
+          qualite_isolation_murs: "moyenne",
+          qualite_isolation_menuiseries: "insuffisante",
+          deperditions_murs: 40,
+          deperditions_baies_vitrees: 120,
+        },
+      ]),
+    );
+    const res = await fetchDpeDetails("X", { fetchFn: fetchFn as unknown as typeof fetch });
+    // fenêtres perdent le plus (120 > 40), donc point faible = fenetres
+    expect(res?.pointFaible).toBe("fenetres");
+  });
+
+  it("aucun point faible quand tout est bien isolé", async () => {
+    const fetchFn = vi.fn(async () =>
+      ok([
+        {
+          qualite_isolation_murs: "bonne",
+          qualite_isolation_plancher_bas: "très bonne",
+          qualite_isolation_menuiseries: "bonne",
+          deperditions_murs: 200,
+        },
+      ]),
+    );
+    const res = await fetchDpeDetails("X", { fetchFn: fetchFn as unknown as typeof fetch });
+    expect(res?.pointFaible).toBeUndefined();
+    expect(res?.isolationMurs).toBe("bonne");
+  });
+
+  it("point faible sans chiffre de déperdition → pire note", async () => {
+    const fetchFn = vi.fn(async () =>
+      ok([
+        { qualite_isolation_murs: "moyenne", qualite_isolation_plancher_bas: "insuffisante" },
+      ]),
+    );
+    const res = await fetchDpeDetails("X", { fetchFn: fetchFn as unknown as typeof fetch });
+    expect(res?.pointFaible).toBe("plancherBas");
+  });
+});

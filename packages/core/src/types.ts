@@ -140,6 +140,9 @@ export interface TaxeFonciereInfo {
 /** Échelle de qualité ADEME (isolation / menuiseries). */
 export type DpeQuality = "insuffisante" | "moyenne" | "bonne" | "très bonne";
 
+/** Poste de déperdition thermique (pour le « point faible »). */
+export type DpePoste = "murs" | "toiture" | "plancherBas" | "fenetres";
+
 export interface DpeDetails {
   /** Type de générateur de chauffage principal (ex. « Chaudière gaz à condensation »). */
   chauffage?: string;
@@ -147,8 +150,19 @@ export interface DpeDetails {
   energieChauffage?: string;
   /** Qualité d'isolation de l'enveloppe (globale). */
   isolation?: DpeQuality;
+  /** Isolation des murs. */
+  isolationMurs?: DpeQuality;
+  /** Isolation de la toiture / combles (variantes ADEME coalescées). */
+  isolationToiture?: DpeQuality;
+  /** Isolation du plancher bas (sol). */
+  isolationPlancherBas?: DpeQuality;
   /** Qualité d'isolation des menuiseries (proxy simple/double vitrage). */
   fenetres?: DpeQuality;
+  /**
+   * Poste où l'on perd le plus de chaleur PARMI les postes mal notés
+   * (insuffisant/moyen). `undefined` si tout est bien isolé.
+   */
+  pointFaible?: DpePoste;
 }
 
 export interface CoproprieteInfo {

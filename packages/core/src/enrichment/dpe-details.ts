@@ -1,4 +1,4 @@
-import type { DpeDetails, DpeQuality } from "../types.ts";
+import type { DpeDetails, DpePoste, DpeQuality } from "../types.ts";
 
 /**
  * Détail « second œuvre » du DPE réel (base ADEME), récupéré par numéro de DPE
@@ -29,6 +29,15 @@ const SELECT = [
   "type_energie_principale_chauffage",
   "qualite_isolation_enveloppe",
   "qualite_isolation_menuiseries",
+  "qualite_isolation_murs",
+  "qualite_isolation_plancher_bas",
+  "qualite_isolation_plancher_haut_comble_perdu",
+  "qualite_isolation_plancher_haut_comble_amenage",
+  "qualite_isolation_plancher_haut_toit_terrasse",
+  "deperditions_murs",
+  "deperditions_planchers_hauts",
+  "deperditions_planchers_bas",
+  "deperditions_baies_vitrees",
 ].join(",");
 
 export interface FetchDpeDetailsOptions {
@@ -41,6 +50,15 @@ interface AdemeDetailRow {
   type_energie_principale_chauffage?: string | null;
   qualite_isolation_enveloppe?: string | null;
   qualite_isolation_menuiseries?: string | null;
+  qualite_isolation_murs?: string | null;
+  qualite_isolation_plancher_bas?: string | null;
+  qualite_isolation_plancher_haut_comble_perdu?: string | null;
+  qualite_isolation_plancher_haut_comble_amenage?: string | null;
+  qualite_isolation_plancher_haut_toit_terrasse?: string | null;
+  deperditions_murs?: number | string | null;
+  deperditions_planchers_hauts?: number | string | null;
+  deperditions_planchers_bas?: number | string | null;
+  deperditions_baies_vitrees?: number | string | null;
 }
 
 /**
@@ -83,14 +101,68 @@ export async function fetchDpeDetails(
   const energieChauffage = clean(row.type_energie_principale_chauffage);
   const isolation = quality(row.qualite_isolation_enveloppe);
   const fenetres = quality(row.qualite_isolation_menuiseries);
+  const isolationMurs = quality(row.qualite_isolation_murs);
+  // Un logement a des combles perdus OU aménagés OU un toit-terrasse : on prend
+  // la variante renseignée.
+  const isolationToiture =
+    quality(row.qualite_isolation_plancher_haut_comble_perdu) ??
+    quality(row.qualite_isolation_plancher_haut_comble_amenage) ??
+    quality(row.qualite_isolation_plancher_haut_toit_terrasse);
+  const isolationPlancherBas = quality(row.qualite_isolation_plancher_bas);
 
-  if (!chauffage && !isolation && !fenetres) return null;
+  const pointFaible = weakestPoste([
+    { poste: "murs", q: isolationMurs, dep: num(row.deperditions_murs) },
+    { poste: "toiture", q: isolationToiture, dep: num(row.deperditions_planchers_hauts) },
+    { poste: "plancherBas", q: isolationPlancherBas, dep: num(row.deperditions_planchers_bas) },
+    { poste: "fenetres", q: fenetres, dep: num(row.deperditions_baies_vitrees) },
+  ]);
+
+  if (
+    !chauffage &&
+    !isolation &&
+    !fenetres &&
+    !isolationMurs &&
+    !isolationToiture &&
+    !isolationPlancherBas
+  ) {
+    return null;
+  }
   return {
     ...(chauffage ? { chauffage } : {}),
     ...(energieChauffage ? { energieChauffage } : {}),
     ...(isolation ? { isolation } : {}),
+    ...(isolationMurs ? { isolationMurs } : {}),
+    ...(isolationToiture ? { isolationToiture } : {}),
+    ...(isolationPlancherBas ? { isolationPlancherBas } : {}),
     ...(fenetres ? { fenetres } : {}),
+    ...(pointFaible ? { pointFaible } : {}),
   };
+}
+
+/** Rang de sévérité : 0 = pire. Seuls insuffisant/moyen comptent comme faiblesse. */
+const WEAK: Record<DpeQuality, number> = { insuffisante: 0, moyenne: 1, bonne: 2, "très bonne": 3 };
+
+/**
+ * Point faible = le poste mal noté (insuffisant/moyen) où l'on perd le plus de
+ * chaleur. On ne signale rien si tout est bien isolé (bonne/très bonne).
+ */
+function weakestPoste(
+  postes: { poste: DpePoste; q: DpeQuality | undefined; dep: number | undefined }[],
+): DpePoste | undefined {
+  const weak = postes.filter((p) => p.q !== undefined && WEAK[p.q] <= 1);
+  if (weak.length === 0) return undefined;
+  // Priorité : la plus grosse déperdition ; à défaut de chiffre, la pire note.
+  weak.sort((a, b) => (b.dep ?? 0) - (a.dep ?? 0) || WEAK[a.q!] - WEAK[b.q!]);
+  return weak[0]!.poste;
+}
+
+function num(v: number | string | null | undefined): number | undefined {
+  if (typeof v === "number") return Number.isFinite(v) ? v : undefined;
+  if (typeof v === "string" && v.trim() !== "") {
+    const n = Number.parseFloat(v);
+    return Number.isFinite(n) ? n : undefined;
+  }
+  return undefined;
 }
 
 function clean(v: string | null | undefined): string | undefined {
