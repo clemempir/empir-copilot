@@ -34,7 +34,9 @@ export function AddressEditor({ nearby, onSubmit, onCancel }: AddressEditorProps
     const ctrl = new AbortController();
     const t = setTimeout(() => {
       geocodeSuggest(q, { nearby, signal: ctrl.signal })
-        .then(setSuggestions)
+        // Une commune seule ne suffit pas : sans rue ni numéro, ni le cadastre
+        // ni le DPE ne peuvent être ciblés (et le label n'a pas de code postal).
+        .then((pts) => setSuggestions(pts.filter((p) => p.precision !== "municipality")))
         .catch(() => {
           /* frappe suivante ou réseau — silencieux */
         });

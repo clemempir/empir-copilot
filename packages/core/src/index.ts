@@ -30,4 +30,6 @@ export { buildQuickAnalysis, scoreLabel } from "./scoring/score.ts";
 export { estimateAcquisitionCost } from "./scoring/acquisition.ts";
 export type { AcquisitionCost } from "./scoring/acquisition.ts";
 export { resolveAddress } from "./resolver/index.ts";
+export { lookupParcel } from "./resolver/cadastre.ts";
+export type { Parcel } from "./resolver/cadastre.ts";
 export type { ResolverInput, ResolvedAddress, MatchBreakdownItem } from "./resolver/types.ts";

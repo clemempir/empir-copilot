@@ -1,9 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { Check, ChevronDown, ExternalLink, Heart, MapPin, PencilLine, RotateCw, User } from "lucide-react";
-import { stripAccentsLower } from "@empir/core";
-import type { CoproprieteInfo, DpeDetails, GeoPoint, Listing, QuickAnalysis } from "@empir/core";
+import type { CoproprieteInfo, DpeDetails, GeoPoint, Listing, Parcel, QuickAnalysis } from "@empir/core";
 import type { ResolvedAddress } from "@empir/core";
-import { cn } from "@/lib/utils";
+import { cn, sameAddress } from "@/lib/utils";
 import { AddressEditor } from "./AddressEditor";
 import {
   ComparablePriceCard,
@@ -27,6 +26,11 @@ export interface ResultViewProps {
   /** Encart affiché au-dessus de la carte adresse (ex. dernière notification). */
   notice?: ReactNode;
   resolvedAddress?: ResolvedAddress;
+  /**
+   * Parcelle levée directement au point affirmé par l'utilisateur (adresse
+   * saisie/corrigée) — affichée quand le résolveur DPE n'apporte pas la sienne.
+   */
+  parcelFallback?: Parcel | null;
   /** Copropriété (registre RNIC) si la parcelle y figure ; sinon rien d'affiché. */
   copro?: CoproprieteInfo | null;
   /** Détail DPE réel (chauffage/fenêtres/isolation) si le certificat ADEME est connu. */
@@ -74,20 +78,12 @@ function splitAddress(addr: string): { line1: string; line2?: string } {
   return { line1: addr };
 }
 
-/** Comparaison d'adresses tolérante (casse, accents, espaces). */
-function sameAddress(a: string, b: string): boolean {
-  const norm = (s: string) =>
-    stripAccentsLower(s)
-      .replace(/[^a-z0-9]+/g, " ")
-      .trim();
-  return norm(a) === norm(b);
-}
-
 export function ResultView({
   listing,
   quick,
   notice,
   resolvedAddress,
+  parcelFallback,
   copro,
   dpeDetails,
   candidates = [],
@@ -106,6 +102,9 @@ export function ResultView({
 }: ResultViewProps) {
   const [editingAddress, setEditingAddress] = useState(false);
   const [showCandidates, setShowCandidates] = useState(false);
+  // Analyse d'une adresse saisie sans annonce : prix/surface inconnus → pas de
+  // score prix, pas de sauvegarde (l'URL `manual:` n'est pas une annonce).
+  const isManual = listing.url.startsWith("manual:");
   // Rapprochements affichables : une adresse concrète, sans doublon.
   const candidateRows = candidates.filter(
     (c, i) => c.address && candidates.findIndex((o) => o.address === c.address) === i,
@@ -132,6 +131,22 @@ export function ResultView({
   // Surface habitable réelle issue du DPE ADEME (colonne « Réel ») — valeur
   // exacte du certificat, à la décimale près (ex. 162,2 m²), pas d'arrondi.
   const realSurface = resolvedOk?.verifiedDpe?.surfaceM2 ?? null;
+  // Au moins une caractéristique ANNONCÉE (colonne « Affiché ») — toujours vrai
+  // depuis une annonce, jamais en mode manuel.
+  const hasAnnounced =
+    listing.surface != null ||
+    listing.landSurface != null ||
+    listing.rooms != null ||
+    listing.bedrooms != null;
+  // Parcelle : celle du résolveur (adresse assumée) d'abord, sinon celle levée
+  // au point affirmé par l'utilisateur (mode manuel / adresse corrigée).
+  const parcelDisplay = resolvedOk?.parcelId
+    ? {
+        id: resolvedOk.parcelId,
+        section: resolvedOk.parcelSection,
+        numero: resolvedOk.parcelNumero,
+      }
+    : parcelFallback ?? undefined;
   const propVisual = PROPERTY_VISUALS[propertyKind(listing)];
   const mapsHref = address ? mapsUrl(address) : null;
   // Saisie manuelle proposée seulement quand la localisation n'est pas confirmée.
@@ -176,25 +191,27 @@ export function ResultView({
           >
             <RotateCw className="size-4 text-empir-muted" strokeWidth={1.8} />
           </button>
-          <button
-            type="button"
-            onClick={onSaveClick}
-            title={saved ? "Retirer des biens sauvegardés" : "Sauvegarder l'annonce"}
-            className="grid size-8 place-items-center rounded-[9px] transition-all"
-            style={{
-              background: saved ? "rgba(124,108,255,0.18)" : "transparent",
-              border: "none",
-            }}
-          >
-            <Heart
-              className="size-4"
+          {!isManual && (
+            <button
+              type="button"
+              onClick={onSaveClick}
+              title={saved ? "Retirer des biens sauvegardés" : "Sauvegarder l'annonce"}
+              className="grid size-8 place-items-center rounded-[9px] transition-all"
               style={{
-                fill: saved ? "#b7acff" : "none",
-                stroke: saved ? "#b7acff" : "#aeb6c5",
-                strokeWidth: 1.8,
+                background: saved ? "rgba(124,108,255,0.18)" : "transparent",
+                border: "none",
               }}
-            />
-          </button>
+            >
+              <Heart
+                className="size-4"
+                style={{
+                  fill: saved ? "#b7acff" : "none",
+                  stroke: saved ? "#b7acff" : "#aeb6c5",
+                  strokeWidth: 1.8,
+                }}
+              />
+            </button>
+          )}
           <button
             type="button"
             onClick={onAccountClick}
@@ -248,7 +265,7 @@ export function ResultView({
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-[14px] font-semibold text-empir-text">
-                {propVisual.label}
+                {isManual ? "Adresse analysée" : propVisual.label}
               </div>
               {editingAddress && onAddressSubmit ? (
                 <AddressEditor
@@ -335,12 +352,14 @@ export function ResultView({
                 </>
               )}
             </div>
-            <div className="flex shrink-0 flex-col items-center gap-1">
-              <ScoreGauge score={quick.score} size={48} />
-              <span className="text-[6px] font-bold tracking-[0.1em] text-empir-accent">
-                SCORE PRIX
-              </span>
-            </div>
+            {!isManual && (
+              <div className="flex shrink-0 flex-col items-center gap-1">
+                <ScoreGauge score={quick.score} size={48} />
+                <span className="text-[6px] font-bold tracking-[0.1em] text-empir-accent">
+                  SCORE PRIX
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Rapprochements d'adresse trouvés par l'algo (liste déroulante) */}
@@ -438,12 +457,22 @@ export function ResultView({
           className={`${quick.market ? "mt-[11px]" : ""} rounded-empir-card border border-empir-line px-[14px]`}
           style={{ background: "rgba(28,34,50,0.5)" }}
         >
-          {/* En-têtes de colonnes : Affiché (annonce) vs Réel (DPE ADEME) */}
-          <div className="grid grid-cols-[1fr_4rem_4rem] gap-x-2 border-b border-empir-line py-[7px] text-[8.5px] font-bold uppercase tracking-[0.08em] text-empir-muted-2">
-            <span />
-            <span className="text-right">Affiché</span>
-            <span className="text-right">Réel</span>
-          </div>
+          {/* En-têtes de colonnes : Affiché (annonce) vs Réel (DPE ADEME) —
+              sans annonce (mode manuel), il n'y a rien d'« affiché » à comparer. */}
+          {hasAnnounced && (
+            <div className="grid grid-cols-[1fr_4rem_4rem] gap-x-2 border-b border-empir-line py-[7px] text-[8.5px] font-bold uppercase tracking-[0.08em] text-empir-muted-2">
+              <span />
+              <span className="text-right">Affiché</span>
+              <span className="text-right">Réel</span>
+            </div>
+          )}
+          {listing.surface == null && realSurface != null && (
+            <DataRow
+              label="Surface habitable"
+              value={`${realSurface.toLocaleString("fr-FR")} m²`}
+              hint="d'après le DPE officiel"
+            />
+          )}
           {listing.surface != null && (
             <CharRow
               label="Surface habitable"
@@ -457,15 +486,15 @@ export function ResultView({
           )}
           {listing.rooms != null && <CharRow label="Pièces" shown={`${listing.rooms}`} />}
           {listing.bedrooms != null && <CharRow label="Chambres" shown={`${listing.bedrooms}`} />}
-          {resolvedOk?.parcelId && (
+          {parcelDisplay && (
             <DataRow
               label="N° de parcelle"
               value={
-                resolvedOk.parcelSection && resolvedOk.parcelNumero
-                  ? `${resolvedOk.parcelSection} ${resolvedOk.parcelNumero}`
-                  : resolvedOk.parcelId
+                parcelDisplay.section && parcelDisplay.numero
+                  ? `${parcelDisplay.section} ${parcelDisplay.numero}`
+                  : parcelDisplay.id
               }
-              hint={resolvedOk.parcelId}
+              hint={parcelDisplay.id}
             />
           )}
           {copro && (
