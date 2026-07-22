@@ -5,12 +5,12 @@ import {
   correctedLocation,
   explainPluZone,
   getZonePatrimoine,
-  lookupParcel,
   type GeoPoint,
   type Listing,
   type Parcel,
   type QuickAnalysis,
 } from "@empir/core";
+import { cachedLookupParcel } from "@/lib/enrichment-cache";
 import type { TabState } from "@/lib/messages";
 import { sameAddress } from "@/lib/utils";
 import { invokeEdge } from "@/lib/supabase";
@@ -166,46 +166,52 @@ export default function App() {
     return "idle";
   }, [analyze.loading, analyze.result]);
 
+  // Adresse affirmée par l'utilisateur (saisie manuelle / corrigée) : le
+  // résultat du résolveur n'est ASSUMÉ que s'il désigne EXACTEMENT cette
+  // adresse — sinon il décrirait le voisin le plus proche. Cette version
+  // filtrée est la SEULE transmise en aval (affichage, marché, copro, DPE) :
+  // la garde vit ici et nulle part ailleurs.
+  const affirmed = activeListing?.location.locationCorrected ? activeListing : null;
+  const resolvedTop = analyze.result?.resolvedAddress;
+  const resolvedAddress =
+    resolvedTop && (!affirmed || sameAddress(resolvedTop.address, affirmed.location.rawAddress))
+      ? resolvedTop
+      : undefined;
+
   // Prix du marché du quartier (ventes DVF réelles autour de l'adresse résolue),
-  // puis score prix = position de l'annonce vs médiane comparable.
-  const market = useMarket(activeListing, analyze.result?.resolvedAddress);
+  // puis score prix = position de l'annonce vs médiane comparable. Sans objet
+  // en mode manuel : pas de prix affiché → coupé explicitement.
+  const market = useMarket(activeListing?.manual ? null : activeListing, resolvedAddress);
   // Risques Géorisques (naturels + technologiques, avec gravité), côté client.
   // La donnée est communale : le marqueur de l'annonce (stable pour toute
   // l'analyse) suffit — évite un re-fetch quand la résolution d'adresse aboutit.
   const risksState = useRisks(
-    activeListing?.geo?.lat ?? analyze.result?.resolvedAddress?.lat,
-    activeListing?.geo?.lon ?? analyze.result?.resolvedAddress?.lon,
+    activeListing?.geo?.lat ?? resolvedAddress?.lat,
+    activeListing?.geo?.lon ?? resolvedAddress?.lon,
   );
-  // Adresse affirmée par l'utilisateur (saisie manuelle / corrigée) : les
-  // données RATTACHÉES à l'adresse (copro, détail DPE) ne sont chargées que si
-  // le résolveur désigne EXACTEMENT cette adresse — sinon elles décriraient le
-  // voisin le plus proche. Même garde que l'affichage dans ResultView.
-  const affirmedAddress = activeListing?.location.locationCorrected
-    ? activeListing.location.rawAddress
-    : null;
-  const resolvedTop = analyze.result?.resolvedAddress;
-  const resolvedForEnrich =
-    resolvedTop && (!affirmedAddress || sameAddress(resolvedTop.address, affirmedAddress))
-      ? resolvedTop
-      : undefined;
   // Copropriété (registre national RNIC), côté client, clé = parcelle résolue —
   // ou, pour une adresse affirmée sans DPE résolu, la parcelle levée au point
   // + l'adresse saisie (le registre matche aussi par n° + rue + code postal).
+  // Chargée seulement une fois l'analyse ABOUTIE : la clé est alors stable —
+  // une seule requête RNIC au lieu de 2-3 pendant que parcelle et résolution
+  // arrivent au fil de l'eau (chaque clé différente = un fetch).
   const coproState = useCopropriete(
-    resolvedForEnrich ??
-      (affirmedAddress && activeListing
-        ? {
-            parcelId: parcelAtPoint?.id,
-            parcelSection: parcelAtPoint?.section,
-            parcelNumero: parcelAtPoint?.numero,
-            address: affirmedAddress,
-            lat: activeListing.geo?.lat,
-            lon: activeListing.geo?.lon,
-          }
-        : undefined),
+    analyze.result?.status !== "ok"
+      ? undefined
+      : resolvedAddress ??
+        (affirmed
+          ? {
+              parcelId: parcelAtPoint?.id,
+              parcelSection: parcelAtPoint?.section,
+              parcelNumero: parcelAtPoint?.numero,
+              address: affirmed.location.rawAddress,
+              lat: affirmed.geo?.lat,
+              lon: affirmed.geo?.lon,
+            }
+          : undefined),
   );
   // Détail DPE réel (chauffage/fenêtres/isolation), côté client, clé = certificat ADEME.
-  const dpeDetailsState = useDpeDetails(resolvedForEnrich?.ademeCertId);
+  const dpeDetailsState = useDpeDetails(resolvedAddress?.ademeCertId);
   const quick: QuickAnalysis = useMemo(() => {
     if (!activeListing) {
       return { listingPricePerM2: null, marketGapPct: null, market: null, score: null, scoreLabel: "—" };
@@ -241,53 +247,56 @@ export default function App() {
 
   // ─── Screens ─────────────────────────────────────────────────────────────
 
+  // Point affirmé par l'utilisateur → lancement : l'annonce (corrigée ou
+  // synthétique) remplace l'annonce détectée pour tout le pipeline, et la
+  // parcelle est levée DIRECTEMENT au point — le cadastre ne dépend pas du
+  // résolveur DPE, elle reste donc affichable même sans certificat à l'adresse.
+  const launchAnalysis = (listing: Listing, point: GeoPoint) => {
+    setCorrectedListing(listing);
+    setParcelAtPoint(null);
+    cachedLookupParcel(point.lat, point.lon)
+      .then((p) => setParcelAtPoint(p))
+      .catch(() => {});
+    void analyze.run(listing);
+  };
+
   // Adresse affirmée par l'utilisateur (saisie manuelle OU rapprochement
   // validé) : localisation écrasée + marqueur précis sur le point → le
-  // résolveur cherche les DPE de CETTE adresse (gate serré ~30 m), et
-  // l'annonce corrigée remplace l'annonce détectée pour tout le pipeline.
+  // résolveur cherche les DPE de CETTE adresse (gate serré ~30 m).
   const applyCorrectedAddress = (point: GeoPoint) => {
     const l = activeListing;
     if (!l) return;
     // rawAddress = label BAN canonique (pas la frappe partielle) pour
     // l'affichage et la comparaison avec l'adresse résolue.
-    const corrected: Listing = {
-      ...l,
-      location: correctedLocation(point.label, point),
-      geo: { lat: point.lat, lon: point.lon, precise: true },
-    };
-    setCorrectedListing(corrected);
-    resolveParcelAtPoint(point);
-    void analyze.run(corrected);
+    launchAnalysis(
+      {
+        ...l,
+        location: correctedLocation(point.label, point),
+        geo: { lat: point.lat, lon: point.lon, precise: true },
+      },
+      point,
+    );
   };
 
   // Mode manuel : analyser une adresse SANS annonce (bien connu hors site
-  // d'annonces). On fabrique une annonce minimale — prix et surface inconnus —
-  // avec un marqueur précis sur le point saisi : le résolveur rattache les DPE
-  // de CETTE adresse (gate serré ~30 m), et la parcelle est levée directement
-  // au point. Le rapport se limite aux données officielles (cadastre, DPE,
-  // risques, urbanisme) : sans prix, pas de score ni de comparaison marché.
+  // d'annonces). Annonce synthétique minimale au marqueur précis : le rapport
+  // se limite aux données officielles (cadastre, DPE, risques, urbanisme).
   const startManualAnalysis = (point: GeoPoint) => {
-    const manual: Listing = {
-      url: `manual:${point.label}`,
-      site: "generic",
-      title: point.label,
-      price: 0,
-      location: correctedLocation(point.label, point),
-      geo: { lat: point.lat, lon: point.lon, precise: true },
-      description: "",
-      photos: [],
-      extractedAt: new Date().toISOString(),
-    };
-    setCorrectedListing(manual);
-    resolveParcelAtPoint(point);
-    void analyze.run(manual);
-  };
-
-  const resolveParcelAtPoint = (point: GeoPoint) => {
-    setParcelAtPoint(null);
-    lookupParcel({ lat: point.lat, lon: point.lon })
-      .then((p) => setParcelAtPoint(p))
-      .catch(() => {});
+    launchAnalysis(
+      {
+        url: `manual:${point.label}`,
+        site: "generic",
+        manual: true,
+        title: point.label,
+        price: 0, // requis par le type, jamais interprété : marché et score sont coupés via `manual`
+        location: correctedLocation(point.label, point),
+        geo: { lat: point.lat, lon: point.lon, precise: true },
+        description: "",
+        photos: [],
+        extractedAt: new Date().toISOString(),
+      },
+      point,
+    );
   };
 
   // Session ouverte (compte créé+vérifié, connexion, ou reset du mot de
@@ -434,7 +443,7 @@ export default function App() {
               </div>
             ) : undefined
           }
-          resolvedAddress={analyze.result?.resolvedAddress}
+          resolvedAddress={resolvedAddress}
           parcelFallback={parcelAtPoint}
           copro={coproState.copro}
           dpeDetails={dpeDetailsState.details}
@@ -449,7 +458,7 @@ export default function App() {
             } else {
               void saved.save(activeListing, {
                 score: quick.score ?? undefined,
-                address: analyze.result?.resolvedAddress?.address,
+                address: resolvedAddress?.address,
               });
             }
           }}

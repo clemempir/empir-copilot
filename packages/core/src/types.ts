@@ -29,6 +29,12 @@ export interface Listing {
   url: string;
   site: Site;
   title: string;
+  /**
+   * Annonce SYNTHÉTIQUE du mode manuel (adresse saisie, sans annonce réelle) :
+   * prix (0) et surface inconnus → ni score prix ni marché. Même famille que
+   * `ListingLocation.locationCorrected`.
+   */
+  manual?: true;
   price: number;
   surface?: number;
   rooms?: number;

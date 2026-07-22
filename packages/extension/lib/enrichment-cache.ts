@@ -1,4 +1,4 @@
-import { citycodeFromLatLon, fetchCommuneSales, fetchCopropriete, fetchDpeDetails, fetchRisks } from "@empir/core";
+import { citycodeFromLatLon, fetchCommuneSales, fetchCopropriete, fetchDpeDetails, fetchRisks, lookupParcel } from "@empir/core";
 import type { CoproprieteParcel } from "@empir/core";
 
 /**
@@ -57,3 +57,10 @@ export const cachedCopropriete = memoized(
 
 /** Détail DPE réel (ADEME), mémoïsé par numéro de certificat. */
 export const cachedDpeDetails = memoized(fetchDpeDetails, (certId) => certId, 50);
+
+/** Parcelle cadastrale au point donné (apicarto), mémoïsée (~1 m près). */
+export const cachedLookupParcel = memoized(
+  (lat: number, lon: number) => lookupParcel({ lat, lon }),
+  (lat, lon) => `${lat.toFixed(5)},${lon.toFixed(5)}`,
+  50,
+);

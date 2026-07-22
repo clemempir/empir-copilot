@@ -10,7 +10,7 @@ export interface IdleViewProps {
   /** Lance l'analyse de l'annonce détectée (CTA principal). */
   onAnalyze?: () => void;
   /** Mode manuel : analyse une adresse saisie, sans annonce. */
-  onManualAddress?: (point: GeoPoint) => void;
+  onManualAddress: (point: GeoPoint) => void;
   /** Accès au compte — disponible même sans annonce détectée. */
   onAccountClick: () => void;
   /** Notification non lue → pastille rouge sur le bouton compte. */
@@ -67,7 +67,7 @@ export function IdleView({
 
       {/* pb-16 ≈ hauteur de l'en-tête : recentre optiquement sur la page entière. */}
       <div className="flex flex-1 flex-col items-center justify-center px-6 pb-16 text-center">
-        {manualMode && onManualAddress ? (
+        {manualMode ? (
           <>
             <div className="flex size-16 items-center justify-center rounded-full bg-empir-primary/15">
               <MapPinned className="size-7 text-empir-accent" />
@@ -108,19 +108,17 @@ export function IdleView({
               <EmpirButton type="button" size="lg" className="min-w-0 flex-1 px-3" onClick={onAnalyze}>
                 Lancer l'analyse
               </EmpirButton>
-              {onManualAddress && (
-                <EmpirButton
-                  type="button"
-                  variant="secondary"
-                  size="lg"
-                  className="shrink-0 gap-[6px] px-[10px] text-[11.5px]"
-                  title="Analyser une autre adresse que celle de l'annonce"
-                  onClick={() => setManualMode(true)}
-                >
-                  <MapPinned className="size-[13px] text-empir-muted" strokeWidth={1.8} />
-                  Saisir l'adresse
-                </EmpirButton>
-              )}
+              <EmpirButton
+                type="button"
+                variant="secondary"
+                size="lg"
+                className="shrink-0 gap-[6px] px-[10px] text-[11.5px]"
+                title="Analyser une autre adresse que celle de l'annonce"
+                onClick={() => setManualMode(true)}
+              >
+                <MapPinned className="size-[13px] text-empir-muted" strokeWidth={1.8} />
+                Saisir l'adresse
+              </EmpirButton>
             </div>
             <p className="mt-3 max-w-[260px] text-[10.5px] leading-relaxed text-empir-muted-2">
               Adresse réelle, DPE officiel, prix du quartier et risques — en quelques secondes.
@@ -138,31 +136,27 @@ export function IdleView({
               Leboncoin, SeLoger, Bien'ici, Citya — EMPIR détecte l'annonce et vous
               donne l'adresse réelle + les données officielles en quelques secondes.
             </p>
-            {onManualAddress && (
-              <>
-                <div className="mt-5 flex w-full max-w-[260px] items-center gap-2.5">
-                  <span className="h-px flex-1" style={{ background: "rgba(255,255,255,0.08)" }} />
-                  <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-empir-muted-2">
-                    ou
-                  </span>
-                  <span className="h-px flex-1" style={{ background: "rgba(255,255,255,0.08)" }} />
-                </div>
-                <EmpirButton
-                  type="button"
-                  variant="secondary"
-                  size="md"
-                  className="mt-4 w-full max-w-[260px] gap-[7px]"
-                  onClick={() => setManualMode(true)}
-                >
-                  <MapPinned className="size-[14px] text-empir-muted" strokeWidth={1.8} />
-                  Saisir une adresse à analyser
-                </EmpirButton>
-                <p className="mt-2.5 max-w-[260px] text-[10.5px] leading-relaxed text-empir-muted-2">
-                  Vous connaissez l'adresse d'un bien ? Analysez son cadastre, son
-                  DPE et ses risques sans passer par une annonce.
-                </p>
-              </>
-            )}
+            <div className="mt-5 flex w-full max-w-[260px] items-center gap-2.5">
+              <span className="h-px flex-1 bg-empir-line-strong" />
+              <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-empir-muted-2">
+                ou
+              </span>
+              <span className="h-px flex-1 bg-empir-line-strong" />
+            </div>
+            <EmpirButton
+              type="button"
+              variant="secondary"
+              size="md"
+              className="mt-4 w-full max-w-[260px] gap-[7px]"
+              onClick={() => setManualMode(true)}
+            >
+              <MapPinned className="size-[14px] text-empir-muted" strokeWidth={1.8} />
+              Saisir une adresse à analyser
+            </EmpirButton>
+            <p className="mt-2.5 max-w-[260px] text-[10.5px] leading-relaxed text-empir-muted-2">
+              Vous connaissez l'adresse d'un bien ? Analysez son cadastre, son
+              DPE et ses risques sans passer par une annonce.
+            </p>
           </>
         )}
       </div>

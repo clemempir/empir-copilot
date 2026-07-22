@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { CoproprieteInfo } from "@empir/core";
+import type { CoproprieteInfo, ResolvedAddress } from "@empir/core";
 import { cachedCopropriete } from "@/lib/enrichment-cache";
 
 export interface UseCopropriete {
@@ -10,16 +10,12 @@ export interface UseCopropriete {
 /**
  * Clés d'interrogation du registre : une `ResolvedAddress` convient telle
  * quelle, mais une adresse affirmée par l'utilisateur + la parcelle levée au
- * point (mode manuel) suffit aussi.
+ * point (mode manuel) suffit aussi. Dérivé du type du core pour ne pas
+ * redéclarer ses champs.
  */
-export interface CoproKey {
-  parcelId?: string;
-  parcelSection?: string;
-  parcelNumero?: string;
-  address?: string;
-  lat?: number;
-  lon?: number;
-}
+export type CoproKey = Partial<
+  Pick<ResolvedAddress, "parcelId" | "parcelSection" | "parcelNumero" | "address" | "lat" | "lon">
+>;
 
 /**
  * Statut de copropriété du bien (registre national RNIC), à partir de la

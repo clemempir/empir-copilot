@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Check, ChevronDown, ExternalLink, Heart, MapPin, PencilLine, RotateCw, User } from "lucide-react";
 import type { CoproprieteInfo, DpeDetails, GeoPoint, Listing, Parcel, QuickAnalysis } from "@empir/core";
 import type { ResolvedAddress } from "@empir/core";
-import { cn, sameAddress } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { AddressEditor } from "./AddressEditor";
 import {
   ComparablePriceCard,
@@ -25,6 +25,11 @@ export interface ResultViewProps {
   quick: QuickAnalysis;
   /** Encart affiché au-dessus de la carte adresse (ex. dernière notification). */
   notice?: ReactNode;
+  /**
+   * Résolution DÉJÀ filtrée par App : pour une adresse affirmée par
+   * l'utilisateur, elle ne désigne jamais une autre adresse que celle-ci
+   * (garde `sameAddress` côté App, unique pour l'affichage ET les hooks).
+   */
   resolvedAddress?: ResolvedAddress;
   /**
    * Parcelle levée directement au point affirmé par l'utilisateur (adresse
@@ -82,7 +87,7 @@ export function ResultView({
   listing,
   quick,
   notice,
-  resolvedAddress,
+  resolvedAddress: resolved,
   parcelFallback,
   copro,
   dpeDetails,
@@ -102,23 +107,18 @@ export function ResultView({
 }: ResultViewProps) {
   const [editingAddress, setEditingAddress] = useState(false);
   const [showCandidates, setShowCandidates] = useState(false);
-  // Analyse d'une adresse saisie sans annonce : prix/surface inconnus → pas de
-  // score prix, pas de sauvegarde (l'URL `manual:` n'est pas une annonce).
-  const isManual = listing.url.startsWith("manual:");
+  // Annonce synthétique du mode manuel : prix/surface inconnus → pas de
+  // score prix, pas de sauvegarde (ce n'est pas une annonce).
+  const isManual = listing.manual === true;
   // Rapprochements affichables : une adresse concrète, sans doublon.
   const candidateRows = candidates.filter(
     (c, i) => c.address && candidates.findIndex((o) => o.address === c.address) === i,
   );
-  // Adresse saisie à la main = vérité : elle reste affichée, et le résultat du
-  // résolveur n'est retenu que s'il concerne EXACTEMENT cette adresse (sinon il
-  // désignerait le voisin le plus proche avec une confiance trompeuse).
+  // Adresse saisie à la main = vérité : elle reste affichée (App garantit déjà
+  // que `resolved` ne désigne jamais une autre adresse que celle-ci).
   const manualAddress = listing.location.locationCorrected
     ? listing.location.rawAddress
     : undefined;
-  const resolved =
-    manualAddress && resolvedAddress && !sameAddress(resolvedAddress.address, manualAddress)
-      ? undefined
-      : resolvedAddress;
   // `resolvedOk` = ce que l'algo ASSUME (statut ≠ unresolved) : seules ces
   // résolutions alimentent les données vérifiées (surface réelle, DPE réel,
   // cadastre). Un top « unresolved » reste AFFICHÉ comme adresse par défaut
@@ -131,8 +131,9 @@ export function ResultView({
   // Surface habitable réelle issue du DPE ADEME (colonne « Réel ») — valeur
   // exacte du certificat, à la décimale près (ex. 162,2 m²), pas d'arrondi.
   const realSurface = resolvedOk?.verifiedDpe?.surfaceM2 ?? null;
-  // Au moins une caractéristique ANNONCÉE (colonne « Affiché ») — toujours vrai
-  // depuis une annonce, jamais en mode manuel.
+  // Au moins une caractéristique ANNONCÉE (colonne « Affiché ») : piloté par
+  // la présence réelle des champs — pas par le mode — pour qu'une annonce
+  // lacunaire (aucun des quatre champs) rende aussi un tableau sans en-tête.
   const hasAnnounced =
     listing.surface != null ||
     listing.landSurface != null ||
